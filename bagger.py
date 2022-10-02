@@ -11,11 +11,12 @@ import tf2_msgs
 import tf2_ros
 import pickle
 import os
-from ros_numpy import numpify
+import tf
+import time
 
 class pc_sampler:
 
-    num_samples = 100
+    num_samples = 3
     sample_interval = 3 #sec
     
     samples = []
@@ -23,29 +24,24 @@ class pc_sampler:
     gt_odometry_latest = None
     time_last_sample = -inf
 
-    """
-    base_link velodyne transform
-    - Translation: [0.230, 0.000, 0.694]
-    - Rotation: in Quaternion [0.000, 0.000, 0.000, 1.000]
-    """
-    vld_T : np.array
-
-    def __init__(self):
-        self.vld_T = np.eye(4)
-        self.vld_T[0, 3] = 0.230
-        self.vld_T[1, 3] = 0.000
-        self.vld_T[2, 3] = 0.694
-      
+    tf_listener = tf.TransformListener
 
     def callback_pcl(self, pc2_msg):
         if len(self.samples) < self.num_samples:
-            if rospy.get_time() - self.time_last_sample > self.sample_interval:
-                self.time_last_sample = rospy.get_time()
+            if time.time() - self.time_last_sample > self.sample_interval:
+                self.time_last_sample = time.time()
 
+                try:
+                    (trans,rot) = self.tf_listener.lookupTransform('/velodyne', '/world', rospy.Time(0))
+                    print(trans, rot)
+                except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                    pass
+                
                 xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(pc2_msg)
                 pcd = open3d.geometry.PointCloud()
                 pcd.points = open3d.utility.Vector3dVector(xyz_array)
-                self.samples.append((pcd, self.gt_odometry_latest))
+
+                self.samples.append((pcd, np.array(trans), np.array(rot)))
             
         else:
             rospy.signal_shutdown("exit")
@@ -76,54 +72,40 @@ class pc_sampler:
         return T_inv
 
     def run(self):
-        rospy.set_param('use_sim_time', True)
+        #rospy.set_param('use_sim_time', True)
         
         rospy.init_node('listener', anonymous=True)
         rospy.Subscriber("/velodyne_points", PointCloud2, self.callback_pcl)
-        rospy.Subscriber("/ground_truth/state", Odometry, self.callback_odo)
+        #rospy.Subscriber("/ground_truth/state", Odometry, self.callback_odo)
+
+        self.tf_listener = tf.TransformListener()
 
         rospy.spin()
 
     def get_clouds(self):
-        return [ptc for ptc, _ in self.samples]
+        return [ptc for ptc, _, _ in self.samples]
         
     def get_transformed_clouds(self):
         ptcs = []
-        for ptc, odo in self.samples:
-            """
-            # create inverse rigid transform
-            q = odo.pose.pose.orientation
-            q_a = np.array([q.x, q.y, q.z, q.w])
-            #print(q_a)
-            R = open3d.geometry.get_rotation_matrix_from_quaternion(q_a)
-            #print(R)
-
-            T = np.eye(4)
-            T[:3, :3] = R.T
-            p = odo.pose.pose.position
-            t = np.array([p.x, p.y, p.z])
-            T[:3, 3] = -R.T@t
-            print(T)
-            """
-            T = self.transform_from_odo_msg(odo)
-            T_inv = self.inverse_transform(T)
-
-            ptc = ptc.transform(T_inv)
+        for ptc, trans, rot in self.samples:
+            R = open3d.geometry.get_rotation_matrix_from_quaternion(rot)
+            ptc = ptc.translate(trans)
+            ptc = ptc.rotate(R)
             ptcs.append(ptc)
         return ptcs
 
     def save_samples(self):
-        odom = []
-        for i, (ptc, odo) in enumerate(self.samples):
+        tf = []
+        for i, (ptc, trans, rot) in enumerate(self.samples):
             open3d.io.write_point_cloud(f"clouds/cloud{i}.pcd", ptc)
-            odom.append(odo)
+            tf.append((trans, rot))
         with open("ground_truth.p", "wb") as f:
-            pickle.dump(odom, f)
+            pickle.dump(tf, f)
 
     def load_samples(self):
-        odom = None
+        tf = None
         with open("ground_truth.p", "rb") as f:
-            odom = pickle.load(f)
+            tf = pickle.load(f)
 
         dir = "clouds"
         pcds = []
@@ -133,19 +115,23 @@ class pc_sampler:
                 pcds.append(open3d.io.read_point_cloud(f))
 
         sample_pairs = []
-        for i in range(len(odom)):
-            sample_pairs.append((pcds[i], odom[i]))
+        for i in range(len(tf)):
+            sample_pairs.append((pcds[i], tf[i][0], tf[i][1]))
 
         self.samples = sample_pairs
 
 if __name__ == "__main__":
     h = pc_sampler()
-    h.run()
     
-    #h.save_samples()
+    h.run()
+    h.save_samples()
+    
     #h.load_samples()
 
-    #open3d.visualization.draw_geometries(h.get_transformed_clouds())
+    #for (ptc, trans, rot) in h.samples:
+    #    print(trans, rot)
+
+    open3d.visualization.draw_geometries(h.get_transformed_clouds())
 
 
 
