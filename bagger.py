@@ -5,7 +5,7 @@ import rospy
 from sensor_msgs.msg import PointCloud2
 from nav_msgs.msg import Odometry
 import rosgraph_msgs 
-import open3d 
+import open3d
 import numpy as np
 import ros_numpy
 import tf2_msgs
@@ -13,10 +13,13 @@ import tf2_ros
 import pickle
 import os
 import tf2_ros
+import time
+import pcl_ros
+pcl_ros.transform_point_cloud()
 
 class pc_sampler:
 
-    num_samples = 5
+    num_samples = 3
     sample_interval = 3 #sec
     
     samples = []
@@ -80,38 +83,92 @@ class pc_sampler:
         return T_inv
 
     def run(self):
-        rospy.set_param('use_sim_time', True)
+        #rospy.set_param('use_sim_time', True)
         
         rospy.init_node('listener', anonymous=True)
         #rospy.Subscriber("/velodyne_points", PointCloud2, self.callback_pcl, queue_size=1) #might try somethin with queue size = 1
         #rospy.Subscriber("/ground_truth/state", Odometry, self.callback_odo)
-        tf_buffer = tf2_ros.Buffer()
+        tf_buffer = tf2_ros.Buffer(rospy.Duration(50))
         tf_listener = tf2_ros.TransformListener(tf_buffer)
+        time.sleep(1)
         
-        rate = rospy.Rate(1/self.sample_interval)
+        points = np.array([[0, 0, 0]])
         while(len(self.samples) < self.num_samples):
+            print("\n---------------")
             pc2_msg = rospy.wait_for_message("/velodyne_points", PointCloud2, timeout=10)
+            #print(pc2_msg.header.frame_id)
 
-            trans = tf_buffer.lookup_transform('velodyne', 'world', pc2_msg.header.stamp)
             #print(pc2_msg.header)
+            trans = tf_buffer.lookup_transform('world', 'velodyne', pc2_msg.header.stamp, rospy.Duration(100.0))
+            #print(trans)
+            t = trans.transform.translation
+            t = np.array([t.x, t.y, t.z])
+            q = trans.transform.rotation
+            q = np.array([q.x, q.y, q.z, q.w])
+            R = open3d.geometry.get_rotation_matrix_from_quaternion(q)
+            
+            print(t)
+            print(q)
+
+            Q = np.array([
+                [-1, 0, 0],
+                [0, -1, 0],
+                [0, 0, 1]
+            ])
+            P = np.array([
+                [1, 0, 0],
+                [0, -1, 0],
+                [0, 0, -1]
+            ])
+
 
             xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(pc2_msg)
-            pcd = open3d.geometry.PointCloud()
-            pcd.points = open3d.utility.Vector3dVector(xyz_array)
+            
+            #xyz_array_world = xyz_array - np.array([t.x, t.y, t.z])
+            
+            xyz_array = xyz_array + Q@t
+            #xyz_array = xyz_array.dot(Q)
+            xyz_array = xyz_array.dot(R)
+            xyz_array = xyz_array.dot(P)
+            
 
-            self.samples.append((pcd, np.array(self.transform_from_msg(trans))))
+            points = np.concatenate((points, xyz_array), axis=0)
+
+            self.samples.append((xyz_array, t, q))
             #print(rospy.get_time())
-            rate.sleep()
+            time.sleep(self.sample_interval)
 
-        
+        pcd = open3d.geometry.PointCloud()
+        pcd.points = open3d.utility.Vector3dVector(points)
+        frame = open3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=[0, 0, 0])
+        open3d.visualization.draw_geometries([pcd, frame])
 
     def get_clouds(self):
-        return [ptc for ptc, _ in self.samples]
+        return [ptc for ptc, _, _ in self.samples]
         
     def get_transformed_clouds(self):
         ptcs = []
-        for ptc, T in self.samples:
-            ptc = ptc.transform(T)
+        for ptc, t, q in self.samples:
+            Q = np.array([
+                [0, 0, 1],
+                [0, -1, 0],
+                [1, 0, 0]
+            ])
+            R = open3d.geometry.get_rotation_matrix_from_quaternion(q)
+            
+            """
+            T = np.eye(4)
+            T[:3, :3] = R@Q
+            T[:3, 3] = -t
+            """
+            ptc.translate(t, relative=False)
+            ptc.rotate(R, center=t)
+            
+            
+           
+            
+            
+           
             ptcs.append(ptc)
         return ptcs
 
@@ -145,14 +202,17 @@ if __name__ == "__main__":
     h = pc_sampler()
     
     h.run()
-    h.save_samples()
+    #h.save_samples()
     
     #h.load_samples()
 
     #for (ptc, trans, rot) in h.samples:
     #    print(trans, rot)
 
-    open3d.visualization.draw_geometries(h.get_transformed_clouds())
+    frame = open3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=[0, 0, 0])
+
+    #open3d.visualization.draw_geometries(h.get_clouds() + [frame])
+    #print("numb samples: ", len(h.samples))
 
 
 
