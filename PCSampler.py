@@ -1,22 +1,10 @@
-from cmath import inf
-from genericpath import isfile
-from random import sample
-from typing import List
-
-from matplotlib.pyplot import get
 import rospy
 from sensor_msgs.msg import PointCloud2
-from nav_msgs.msg import Odometry
-import rosgraph_msgs 
-import open3d
+import tf
 import numpy as np
 import ros_numpy
-import tf
-import tf2_msgs
-import tf2_ros
 import pickle
 import time
-
 
 class PCSampler:
 
@@ -57,6 +45,7 @@ class PCSampler:
         return np.array([xf(p) for p in xyz_array])
 
     def vis_pc(self, xyz_array_list):
+        import open3d
         pcds = []
         for xyz_array in xyz_array_list:
             pcd = open3d.geometry.PointCloud()
@@ -99,7 +88,7 @@ if __name__ == "__main__":
     h.load_samples()
 
     w = h.get_transformed_clouds()
-    h.vis_pc(w)
+    h.vis_pc(w) #use open3d for now
 
 
 
