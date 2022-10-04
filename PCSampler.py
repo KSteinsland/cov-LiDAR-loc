@@ -38,29 +38,24 @@ class PCSampler:
 
         return full_cloud
 
-    def transform_cloud(self, xyz_array, mat44):
-        def xf(p):
-            xyz = tuple(np.dot(mat44, np.array([p[0], p[1], p[2], 1.0])))[:3]
-            return xyz
-        return np.array([xf(p) for p in xyz_array])
-
-    def vis_pc(self, xyz_array_list):
-        import open3d
-        pcds = []
-        for xyz_array in xyz_array_list:
-            pcd = open3d.geometry.PointCloud()
-            pcd.points = open3d.utility.Vector3dVector(xyz_array)
-            pcds.append(pcd)
-        frame = open3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=[0, 0, 0])
-        open3d.visualization.draw_geometries(pcds + [frame])
-
     def get_clouds(self):
         return [xyz_array for xyz_array, _ in self.samples]
+
+    def get_transforms(self, use_quat=False):
+        if use_quat:
+            samples = []
+            for ptc, T in self.samples:
+                q = tf.transformations.quaternion_from_matrix(T)
+                t = T[:3, 3]
+                samples.append(np.concatenate((t, q)))
+            return samples
+
+        return [T for _, T in self.samples]
         
     def get_transformed_clouds(self):
         ptcs = []
         for xyz_array, mat44 in self.samples:
-            ptcs.append(self.transform_cloud(xyz_array, mat44))
+            ptcs.append(transform_cloud(xyz_array, mat44))
         return ptcs
 
     def save_samples(self):
@@ -76,24 +71,59 @@ class PCSampler:
             files = glob.glob("./clouds/*.p")
             pickle_filename = max(files, key=os.path.getctime)
         with open(pickle_filename, "rb") as f:
-            self.samples = pickle.load(f)
+            self.samples = pickle.load(f)        
         return self.samples
+
+
+def transform_cloud(xyz_array, mat44):
+        def xf(p):
+            xyz = tuple(np.dot(mat44, np.array([p[0], p[1], p[2], 1.0])))[:3]
+            return xyz
+        return np.array([xf(p) for p in xyz_array])
+
+def vis_pc(xyz_array_list):
+    import open3d
+    
+    if isinstance(xyz_array_list[0], open3d.geometry.PointCloud):
+        frame = open3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=[0, 0, 0])
+        open3d.visualization.draw_geometries(xyz_array_list + [frame])
+
+    elif isinstance(xyz_array_list[0], np.ndarray):
+        pcds = []
+        for xyz_array in xyz_array_list:
+            pcd = open3d.geometry.PointCloud()
+            pcd.points = open3d.utility.Vector3dVector(xyz_array)
+            pcds.append(pcd)
+        frame = open3d.geometry.TriangleMesh.create_coordinate_frame(size=0.6, origin=[0, 0, 0])
+        open3d.visualization.draw_geometries(pcds + [frame])
+    
+
+def plot_pc(xyz_array_list):
+    import matplotlib.pyplot as plt
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    for xyz_array in xyz_array_list:
+        xs = xyz_array[:,0]
+        ys = xyz_array[:,1]
+        zs = xyz_array[:,2]
+        ax.scatter(xs, ys, zs)
+    plt.show()
 
 
 if __name__ == "__main__":
     num_samples = 10
     sample_interval = 3 #sec
     
-    h = PCSampler()
-    h.load_samples()
+    S = PCSampler()
+    samples = S.load_samples()
 
-    w = h.get_transformed_clouds()
-    h.vis_pc(w) #use open3d for now
-
+    #clouds_world = S.get_transformed_clouds()
+    #plot_pc(clouds_world[:2])
+    
 
 
 
     
-    
+
 
 
