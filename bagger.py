@@ -8,18 +8,16 @@ import rosgraph_msgs
 import open3d
 import numpy as np
 import ros_numpy
+import tf
 import tf2_msgs
 import tf2_ros
 import pickle
 import os
-import tf2_ros
 import time
-import pcl_ros
-pcl_ros.transform_point_cloud()
 
 class pc_sampler:
 
-    num_samples = 3
+    num_samples = 10
     sample_interval = 3 #sec
     
     samples = []
@@ -88,8 +86,10 @@ class pc_sampler:
         rospy.init_node('listener', anonymous=True)
         #rospy.Subscriber("/velodyne_points", PointCloud2, self.callback_pcl, queue_size=1) #might try somethin with queue size = 1
         #rospy.Subscriber("/ground_truth/state", Odometry, self.callback_odo)
-        tf_buffer = tf2_ros.Buffer(rospy.Duration(50))
-        tf_listener = tf2_ros.TransformListener(tf_buffer)
+        #tf_buffer = tf2_ros.Buffer(rospy.Duration(50))
+        tf_listener = tf.TransformListener()
+        
+    
         time.sleep(1)
         
         points = np.array([[0, 0, 0]])
@@ -99,8 +99,23 @@ class pc_sampler:
             #print(pc2_msg.header.frame_id)
 
             #print(pc2_msg.header)
-            trans = tf_buffer.lookup_transform('world', 'velodyne', pc2_msg.header.stamp, rospy.Duration(100.0))
-            #print(trans)
+            #trans = tf_buffer.lookup_transform('world', 'velodyne', pc2_msg.header.stamp, rospy.Duration(100.0))
+            tf_listener.waitForTransform("/velodyne", "/world", pc2_msg.header.stamp, rospy.Duration(100.0))
+            #cloud = tf_listener.transformPointCloud("world", pc2_msg)
+            
+            xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(pc2_msg)
+            mat44 = tf_listener.asMatrix("/world", pc2_msg.header)
+            def xf(p):
+                xyz = tuple(np.dot(mat44, np.array([p[0], p[1], p[2], 1.0])))[:3]
+                return xyz
+            pnts = [xf(p) for p in xyz_array]
+
+            points = np.concatenate((points, pnts), axis=0)
+
+            self.samples.append((xyz_array, None, None))
+            time.sleep(self.sample_interval)
+
+            """
             t = trans.transform.translation
             t = np.array([t.x, t.y, t.z])
             q = trans.transform.rotation
@@ -120,12 +135,12 @@ class pc_sampler:
                 [0, -1, 0],
                 [0, 0, -1]
             ])
+            
 
-
-            xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(pc2_msg)
+            #xyz_array = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(cloud)
+            
             
             #xyz_array_world = xyz_array - np.array([t.x, t.y, t.z])
-            
             xyz_array = xyz_array + Q@t
             #xyz_array = xyz_array.dot(Q)
             xyz_array = xyz_array.dot(R)
@@ -134,9 +149,10 @@ class pc_sampler:
 
             points = np.concatenate((points, xyz_array), axis=0)
 
-            self.samples.append((xyz_array, t, q))
+            self.samples.append((xyz_array, None, None))
             #print(rospy.get_time())
             time.sleep(self.sample_interval)
+            """
 
         pcd = open3d.geometry.PointCloud()
         pcd.points = open3d.utility.Vector3dVector(points)
