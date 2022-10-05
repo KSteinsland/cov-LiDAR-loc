@@ -31,7 +31,7 @@ class PCSampler:
 
             self.samples.append((xyz_array, mat44))
             
-            xyz_array_world = self.transform_cloud(xyz_array, mat44)
+            xyz_array_world = transform_cloud(xyz_array, mat44)
             full_cloud = np.concatenate((full_cloud, xyz_array_world), axis=0)
 
             time.sleep(sample_interval)
@@ -111,15 +111,21 @@ def plot_pc(xyz_array_list):
 
 
 if __name__ == "__main__":
-    num_samples = 10
-    sample_interval = 3 #sec
+    num_samples = 30
+    sample_interval = 5 #sec
     
     S = PCSampler()
-    samples = S.load_samples()
 
+    #run and save point clouds
+    S.sample(num_samples, sample_interval)
+    S.save_samples()
+
+    #show point clouds
+    #S.load_samples()
     #clouds_world = S.get_transformed_clouds()
-    #plot_pc(clouds_world[:2])
-    
+    #vis_pc(clouds_world)
+    #print(samples[0][1][:2,3])
+    #print(len(samples))
 
 
 
