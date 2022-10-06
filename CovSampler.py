@@ -1,3 +1,4 @@
+import imp
 from random import sample
 from traceback import print_tb
 from PCSampler import PCSampler, vis_pc, transform_cloud
@@ -81,15 +82,16 @@ for i in range(len(clouds) - 1):
     Ts = [icp_transform for icp_transform, _ in icp_transformations]
     samples.append((mean, cov, T1.transform(), Ts))
 
+def save_samples():
+    import datetime 
+    import pickle
+    dt = datetime.datetime.now()
+    timestamp = dt.strftime("%Y%m%d-%H%M%S")
+    with open(f"covariances/cov_samples_{timestamp}.p", "wb") as f:
+        pickle.dump(samples, f)
 
-
-import pickle
-with open("tf_samples5.p", "wb") as f:
-    pickle.dump(samples, f)
-    #samples = pickle.load(f)
-
+#project samples for to visualize covergence clusters
 #sampled_pose_projected = np.array([[icp_transform[0,3], icp_transform[1,3], -3]])
-#i = 1
 #projected_samples = np.array([[samples[i][3][0,3], samples[i][3][1,3], -3] for i in range(20)])
 #vis_pc([c0, c1_0, projected_samples])
 
