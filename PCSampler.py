@@ -62,7 +62,7 @@ class PCSampler:
         import datetime 
         dt = datetime.datetime.now()
         timestamp = dt.strftime("%Y%m%d-%H%M%S")
-        with open(f"clouds/clouds_{timestamp}.p", "wb") as f:
+        with open(f"clouds/{timestamp}.p", "wb") as f:
             pickle.dump(self.samples, f)
 
     def load_samples(self, pickle_filename="newest"):
@@ -115,10 +115,11 @@ if __name__ == "__main__":
     sample_interval = 5 #sec
     
     S = PCSampler()
+    S.load_samples()
 
     #run and save point clouds
-    S.sample(num_samples, sample_interval)
-    S.save_samples()
+    #S.sample(num_samples, sample_interval)
+    #S.save_samples()
 
     #show point clouds
     #S.load_samples()
