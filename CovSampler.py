@@ -44,7 +44,7 @@ def sample_registrations(cloud_source, cloud_target, rel_T, num_samples):
         pcd0.estimate_normals()
 
         #do registration using open3ds point to plane icp for now
-        treshold = 1.5
+        treshold = 1.0
         initial_T = T_p.transform()
         reg = o3d.pipelines.registration.registration_icp(
             pcd1, pcd0, treshold, initial_T, 
@@ -92,20 +92,28 @@ def plot_ellipse(ax, mean, cov, n=50, chi2_val=9.21, fill_alpha=0., fill_color='
     ax.fill(circle_points[0, :], circle_points[1, :], alpha=fill_alpha, facecolor=fill_color)
     ax.plot(circle_points[0, :], circle_points[1, :], color=fill_color)
 
+def plot_results_2d(ax, c0_w, sample_points2_w, mean2_w, cov2x2_w, z_lim=1):
+    ax.plot(c0_w[c0_w[:,2] > z_lim][:,0], c0_w[c0_w[:,2] > z_lim][:,1], 'bo', markersize=0.1)
+    ax.plot(sample_points2_w[:,0], sample_points2_w[:,1], 'go', markersize=2)
+    plot_ellipse(ax, mean2_w, cov2x2_w, chi2_val=5)
 
 if __name__ == "__main__":
-    np.random.seed(1)
+    np.random.seed(0)
 
     S = PCSampler()
     S.load_samples()
     clouds = S.get_clouds()
     transforms = S.get_transforms(use_quat=True)
 
-    """ cov_samples = []
+    fig, ax = plt.subplots()
+
+    cov_samples = []
     for i in range(len(clouds) - 1):
         #get the two clouds and their tranformations to world
         c0, c1 = clouds[i], clouds[i+1]
         T0, T1 = SE3(transforms[i]), SE3(transforms[i+1])
+        c0_w = transform_cloud(c0, T0.transform())
+        c1_w = transform_cloud(c1, T1.transform())
 
         #get ground truth relative transformation
         T = T0.inverse()*T1
@@ -115,64 +123,44 @@ if __name__ == "__main__":
         samples = sample_registrations(c1, c0, T, num_samples)
 
         mean, cov = calc_mean_cov(samples, T)
-        print(mean)
-        with np.printoptions(precision=3, suppress=True):
-            print(cov)
-        cov_samples.append((mean, cov, T0.transform()))
-    
-    save_samples(cov_samples) """
+        
+        A = T1.adj()
+        cov_w = T1.transform()[:3,:3]@cov[:3,:3]@(T1.transform()[:3,:3].T) #use this?
+        cov_w_A = A@cov@A.T # or this?
 
-    nc1, nc2 = 12, 20
-    c0, c1 = clouds[nc1], clouds[nc2]
-    T0, T1 = SE3(transforms[nc1]), SE3(transforms[nc2])
-    c0_w = transform_cloud(c0, T0.transform())
-    c1_w = transform_cloud(c1, T1.transform())
+        # the mean is T in T0 and T1 in world
+        cov_samples.append((T1.transform(), cov_w_A, )) 
 
-    #get ground truth relative transformation
-    T = T0.inverse()*T1
-    c1_0 = transform_cloud(c1, T.transform())
+        #get sample points 2d to visualize covergence clusters
+        sample_points2 = np.array([[samples[i][0,3], samples[i][1,3], 0] for i in range(num_samples)])
+        sample_points2_w = transform_cloud(sample_points2, T0.transform())
 
-    num_samples = 10
-    samples = sample_registrations(c1, c0, T, num_samples)
+        plot_results_2d(ax, c0_w, sample_points2_w, T1.transform()[:2,3], cov_w_A[:2,:2])
 
-    mean, cov = calc_mean_cov(samples, T)
+        
+    #save_samples(cov_samples)
 
-    A = T1.adj()
-    cov_w = T1.transform()[:3,:3]@cov[:3,:3]@(T1.transform()[:3,:3].T)
-    cov_w_A = A@cov@A.T
-
-    with np.printoptions(precision=4, suppress=True):
-        print(cov_w, '\n')
-        print(cov_w_A[:3,:3])
-
-        # the mean and samples are taken in the tangent space of c1
-        # so we need to transform to world 
-        #mean_w = T1.adj()@mean
-        #print(mean_w)   
-
-   
-    #project samples to visualize covergence clusters
-    projected_samples = np.array([[samples[i][0,3], samples[i][1,3], 0] for i in range(num_samples)])
-    projected_samples_w = transform_cloud(projected_samples, T0.transform())
-    #vis_pc([c0, c1_0, projected_samples, np.array([[mean[0], mean[1], 5]])])
-
-    fig, ax = plt.subplots()
-    ax.plot(c0_w[:,0], c0_w[:,1], 'bo', markersize=0.1)
-    ax.plot(c1_w[:,0], c1_w[:,1], 'ro', markersize=0.1)
-    ax.plot(projected_samples_w[:,0], projected_samples_w[:,1], 'go', markersize=2)
-    #ax.add_artist(e)
-    plot_ellipse(ax, T1.transform()[:2,3], cov_w[:2,:2], chi2_val=5)
-    plot_ellipse(ax, T1.transform()[:2,3], cov_w_A[:2,:2], chi2_val=5, fill_color='red')
+    #plot
     ax.relim()
     ax.autoscale_view()
     plt.gca().set_aspect('equal', adjustable='box')
-    #ax.set_xlim(20, 25)
-    #ax.set_ylim(-2.5, 2.5)
-    #ax.set_xlim(min(ax.get_xlim()[0], ax.get_ylim()[0], max(ax.get_xlim()[1], ax.get_ylim()[1])))
-    #ax.set_ylim(ax.get_xlim()[0], ax.get_xlim()[1])
-    
     plt.show()
 
+
+    
+
+    
+
+   
+    
+
+
+    
+
+    
+
+
+    
 
 
 
