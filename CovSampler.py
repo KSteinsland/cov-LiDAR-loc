@@ -23,51 +23,47 @@ def calc_mean_cov(tf_list, T_gt):
     cov = cov / (n - 1)
     return mean, cov
 
+def open3d_icp(source, target, initial_T):
+    #convert clouds to open3d clouds
+    pcd0 = o3d.geometry.PointCloud()
+    pcd0.points = o3d.utility.Vector3dVector(target)
+    pcd0.estimate_normals()
+
+    pcd1 = o3d.geometry.PointCloud()
+    pcd1.points = o3d.utility.Vector3dVector(source)
+    pcd0.estimate_normals()
+
+    #do registration using open3ds point to plane icp for now
+    treshold = 1.0
+    reg = o3d.pipelines.registration.registration_icp(
+        pcd1, pcd0, treshold, initial_T, 
+        o3d.pipelines.registration.TransformationEstimationPointToPlane()
+    )
+    return reg.transformation
+
 def sample_registrations(cloud_source, cloud_target, rel_T, num_samples):
+    """
+    Will sample an initial tranform from distribution with mean at rel_t and covariance cov6x6.
+    Registers clouds_source to cloud_target with this intital transform as prior. 
+    Does this num_samples times and returns list of transforms. 
+    """
+
     samples = [] 
     for i in range(num_samples):
         #give T some random perturbations to simulate noisy odometry
+        #TODO take in cov6x6 instead of doing this  
         cov_pos = 0.5
         cov_yaw = 0.01
         p = np.zeros(6)
         p[:2] = np.sqrt(cov_pos)*np.random.normal(size=2) # we only perturb x,y
         p[5] = np.sqrt(cov_yaw)*np.random.normal(size=1) # we only perturb yaw
         T_p = SE3Tangent(p) + rel_T #I guess we want to add p on the left side? ask nikhil
-
-        #convert clouds to open3d clouds
-        pcd0 = o3d.geometry.PointCloud()
-        pcd0.points = o3d.utility.Vector3dVector(cloud_target)
-        pcd0.estimate_normals()
-
-        pcd1 = o3d.geometry.PointCloud()
-        pcd1.points = o3d.utility.Vector3dVector(cloud_source)
-        pcd0.estimate_normals()
-
-        #do registration using open3ds point to plane icp for now
-        treshold = 1.0
         initial_T = T_p.transform()
-        reg = o3d.pipelines.registration.registration_icp(
-            pcd1, pcd0, treshold, initial_T, 
-            o3d.pipelines.registration.TransformationEstimationPointToPlane()
-        )
-        icp_transform = reg.transformation
+
+        icp_transform = open3d_icp(cloud_source, cloud_target, initial_T)
+
         samples.append(icp_transform)
     return samples
-
-def ellipse_params(covmat2x2):
-    a = covmat2x2[0,0]
-    b = covmat2x2[0,1]
-    c = covmat2x2[1,1]
-    width  = (a+c)/2 + np.sqrt(((a-c)/2)**2 + b**2)
-    length = (a+c)/2 - np.sqrt(((a-c)/2)**2 + b**2)
-    angle = 0
-    if b == 0 and a >= c:
-        angle = 0
-    elif b == 0 and a < c:
-        angle = np.pi / 2
-    else:
-        angle = np.arctan2(width - a, b)
-    return np.sqrt(width), np.sqrt(length), angle
 
 def save_samples(samples):
     import datetime 
@@ -145,33 +141,3 @@ if __name__ == "__main__":
     ax.autoscale_view()
     plt.gca().set_aspect('equal', adjustable='box')
     plt.show()
-
-
-    
-
-    
-
-   
-    
-
-
-    
-
-    
-
-
-    
-
-
-
-""" 
-    from matplotlib.patches import Ellipse
-
-    cov_w = np.array([[1, 0, 0],
-                      [0, 1, 0],
-                      [0, 0 , 0]])
-
-    w, l, a = ellipse_params(cov_w[:2,:2])
-    print(w,l,a)
-    e = Ellipse(T1.transform()[:2,3], w, l, angle=np.rad2deg(a))
-    e.set_fill(False) """
