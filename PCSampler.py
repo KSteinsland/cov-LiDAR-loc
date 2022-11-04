@@ -5,6 +5,7 @@ import numpy as np
 import ros_numpy
 import pickle
 import time
+import os
 
 class PCSampler:
 
@@ -65,6 +66,13 @@ class PCSampler:
         with open(f"clouds/{timestamp}.p", "wb") as f:
             pickle.dump(self.samples, f)
 
+    def save_samples_csv(self, clouds_filename):
+        foldername = clouds_filename.split(".")[0]
+        os.makedirs(f'clouds_csv/{foldername}', exist_ok=True)
+        samples = self.load_samples(f'./clouds/{clouds_filename}')
+        for i, (xyz_array, _) in enumerate(samples):
+            np.savetxt(f'clouds_csv/{foldername}/cloud{i:03d}.csv', xyz_array, delimiter=",")
+
     def load_samples(self, pickle_filename="newest"):
         if pickle_filename == "newest":
             import glob, os
@@ -116,6 +124,7 @@ if __name__ == "__main__":
     
     S = PCSampler()
     S.load_samples()
+    S.save_samples_csv('20221005-204202.p')
 
     #run and save point clouds
     #S.sample(num_samples, sample_interval)
