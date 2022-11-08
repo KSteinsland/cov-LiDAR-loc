@@ -82,6 +82,9 @@ class PCSampler:
             self.samples = pickle.load(f)        
         return self.samples
 
+def add_noise_to_cloud(cloud, std_noise):
+    noise = std_noise * np.random.normal(size=cloud.shape)
+    return cloud + noise
 
 def transform_cloud(xyz_array, mat44):
         def xf(p):
@@ -120,11 +123,11 @@ def plot_pc(xyz_array_list):
 
 if __name__ == "__main__":
     num_samples = 30
-    sample_interval = 5 #sec
+    sample_interval = 6 #sec
     
     S = PCSampler()
-    S.load_samples()
-    S.save_samples_csv('20221005-204202.p')
+    #S.load_samples()
+    #S.save_samples_csv('20221107-185525.p')
 
     #run and save point clouds
     #S.sample(num_samples, sample_interval)
@@ -133,7 +136,7 @@ if __name__ == "__main__":
     #show point clouds
     #S.load_samples()
     #clouds_world = S.get_transformed_clouds()
-    #vis_pc(clouds_world)
+    #vis_pc([add_noise_to_cloud(clouds_world[0], 0.1)])
     #print(samples[0][1][:2,3])
     #print(len(samples))
 

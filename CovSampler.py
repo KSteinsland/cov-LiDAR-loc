@@ -108,9 +108,9 @@ def icp_with_cov(pc_ref, pc_in, T_init):
     T = data[:4]
     init_T = data[4:]
 
-    data_cov = np.genfromtxt(pose_path_str)
+    data_cov = np.genfromtxt(cov_path_str)
     censi = data_cov[:6]
-    bonnabel = data_cov[:6]
+    bonnabel = data_cov[6:]
 
     return T, censi, bonnabel
 
@@ -132,7 +132,7 @@ def open3d_icp(source, target, initial_T):
     )
     return reg.transformation
 
-def sample_registrations(cloud_source, cloud_target, rel_T, num_samples):
+def sample_registrations(cloud_source, cloud_target, rel_T, num_samples, clouds_path, clouds_noise_path, std_sensor_noise):
     """
     Will sample an initial tranform from distribution with mean at rel_t and covariance cov6x6.
     Registers clouds_source to cloud_target with this intital transform as prior. 
@@ -146,17 +146,19 @@ def sample_registrations(cloud_source, cloud_target, rel_T, num_samples):
         cov_pos = 5e-1
         cov_yaw = 2e-3
         p = np.zeros(6)
-        p[:2] = np.sqrt(cov_pos)*np.random.normal(size=2) # we only perturb x,y
-        p[5] = np.sqrt(cov_yaw)*np.random.normal(size=1) # we only perturb yaw
+        #p[:2] = np.sqrt(cov_pos)*np.random.normal(size=2) # we only perturb x,y
+        #p[5] = np.sqrt(cov_yaw)*np.random.normal(size=1) # we only perturb yaw
         T_p = SE3Tangent(p) + rel_T #I guess we want to add p on the left side? ask nikhil
         initial_T = T_p.transform()
 
+        add_noise_to_clouds(clouds_path, clouds_noise_path, std_sensor_noise)
+
         #replace this with the new icp, read and write direct
         #icp_transform = open3d_icp(cloud_source, cloud_target, initial_T)
-        icp_transform= icp_without_cov(cloud_source, cloud_target, initial_T)
-
+        icp_transform = icp_without_cov(cloud_source, cloud_target, initial_T)
 
         samples.append(icp_transform)
+
     return samples
 
 def save_samples(samples):
@@ -167,7 +169,7 @@ def save_samples(samples):
     with open(f"covariances/{timestamp}.p", "wb") as f:
         pickle.dump(samples, f)
 
-def plot_ellipse(ax, mean, cov, n=50, chi2_val=9.21, fill_alpha=0., fill_color='lightsteelblue'):
+def plot_ellipse(ax, mean, cov, n=50, chi2_val=9.21, fill_alpha=0., fill_color='lightsteelblue', label=None):
     u, s, _ = np.linalg.svd(cov)
     scale = np.sqrt(chi2_val * s)
 
@@ -180,30 +182,52 @@ def plot_ellipse(ax, mean, cov, n=50, chi2_val=9.21, fill_alpha=0., fill_color='
     circle_points = (R * scale) @ np.vstack((x.flatten(), y.flatten())) + t
 
     ax.fill(circle_points[0, :], circle_points[1, :], alpha=fill_alpha, facecolor=fill_color)
-    ax.plot(circle_points[0, :], circle_points[1, :], color=fill_color)
+    ax.plot(circle_points[0, :], circle_points[1, :], color=fill_color, label=label + " - 3sigma")
 
-def plot_results_2d(ax, c0_w, sample_points2_w, mean2_w, cov2x2_w, z_lim=1):
+def plot_results_2d(ax, c0_w, sample_points2_w, mean2_w, cov2x2_w_mc, cov2x2_w_censi, cov2x2_w_bonna, z_lim=1):
     ax.plot(c0_w[c0_w[:,2] > z_lim][:,0], c0_w[c0_w[:,2] > z_lim][:,1], 'bo', markersize=0.1)
     ax.plot(sample_points2_w[:,0], sample_points2_w[:,1], 'go', markersize=2)
-    plot_ellipse(ax, mean2_w, cov2x2_w, chi2_val=5)
+    plot_ellipse(ax, mean2_w, cov2x2_w_mc)
+    plot_ellipse(ax, mean2_w, cov2x2_w_censi, fill_color="red")
+    plot_ellipse(ax, mean2_w, cov2x2_w_bonna, fill_color="green")
 
+
+def add_noise_to_cloud(cloud, std_noise):
+    noise = std_noise * np.random.normal(size=cloud.shape)
+    return cloud + noise
+
+def add_noise_to_clouds(clouds_path, result_save_path, std_noise):
+    clouds_path_list = sorted(glob.glob(str(clouds_path) + "/*"))
+    for cloud_path in clouds_path_list:
+        cloud = np.genfromtxt(cloud_path, delimiter=',')
+        cloud_noisy = add_noise_to_cloud(cloud, std_noise)
+        save_path = str(result_save_path) + "/" + cloud_path.split('/')[-1]
+        np.savetxt(save_path, cloud_noisy, delimiter=",")
 
 if __name__ == "__main__":
     np.random.seed(0)
 
     S = PCSampler()
     S.load_samples()
-    clouds = S.get_clouds()[:2]
+    clouds = S.get_clouds()
     transforms = S.get_transforms(use_quat=True)
 
-    cloud_dir = "20221005-204202"
+    cloud_dir = "20221107-185525"
     clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
-    clouds_path_list = sorted(glob.glob(str(clouds_path) + "/*"))
+    
 
-    fig, ax = plt.subplots()
+    std_sensor_noise = 0.01
+    clouds_noise_path = base_path / Path("./clouds_csv_noise/") / cloud_dir
+    os.makedirs(clouds_noise_path, exist_ok=True)
+    add_noise_to_clouds(clouds_path, clouds_noise_path, std_sensor_noise)
+    
+    clouds_path_list = sorted(glob.glob(str(clouds_noise_path) + "/*"))
 
     cov_samples = []
     for i in range(len(clouds) - 1):
+        """ if i < 10:#18:
+            continue """
+        print("cloud number ", i, " and ", i+1)
         #get the two clouds and their tranformations to world
         c0, c1 = clouds[i], clouds[i+1]
         T0, T1 = SE3(transforms[i]), SE3(transforms[i+1])
@@ -212,36 +236,83 @@ if __name__ == "__main__":
 
         #get ground truth relative transformation
         T = T0.inverse()*T1
-        c1_0 = transform_cloud(c1, T.transform())
+        #c1_0 = transform_cloud(c1, T.transform())
 
-        num_samples = 20
-        #clouds_path_list[1]
-        samples = sample_registrations(clouds_path_list[i], clouds_path_list[i+1], T, num_samples)
-        #samples = sample_registrations(c1, c0, T, num_samples)
+        num_samples = 100
+        samples = sample_registrations(clouds_path_list[i], clouds_path_list[i+1], T, num_samples, clouds_path, clouds_noise_path, std_sensor_noise)
         
-        c1_0 = transform_cloud(c1, samples[0])
-        #vis_pc([c0, c1_0])
+        mean, sampeled_cov = calc_mean_cov(samples, T)
+        
+        #censi
+        icp_transform, censi, bonnabel = icp_with_cov(clouds_path_list[i], clouds_path_list[i+1], T.transform())
+        A = T.transform()
+        censi_cov = std_sensor_noise * censi[:3,:3]
 
-        mean, cov = calc_mean_cov(samples, T)
+        cov_samples.append((T1.transform(), sampeled_cov, censi_cov))
         
-        A = T1.adj()
-        cov_w = T1.transform()[:3,:3]@cov[:3,:3]@(T1.transform()[:3,:3].T) #use this?
-        cov_w_A = A@cov@A.T # or this?
+        #plot 
+        sample_points2d = np.array([[samples[i][0,3], samples[i][1,3], 0] for i in range(num_samples)])
+        sample_points2d = transform_cloud(sample_points2d, T.inverse().transform())
+
+        fig, ax = plt.subplots()
+
+        #ax.set_xlim(-1,1)
+        #ax.set_ylim(-1,1)
+
+        ax.plot(sample_points2d[:,0], sample_points2d[:,1], 'ro', label="samples")
+        plot_ellipse(ax, [0, 0], sampeled_cov[:2], fill_color='red', label="sample cov")
+        plot_ellipse(ax, [0, 0], censi_cov[:2], fill_color='blue', label="censi",)
+        plt.legend(loc="best")
+        plt.savefig(f'./imgs_cov/clouds{i}and{i+1}.png')
+        #plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        #A = T1.adj()
+        #cov_w = T1.transform()[:3,:3]@cov[:3,:3]@(T1.transform()[:3,:3].T) #use this?
+        #cov_w_A = A@cov@A.T # or this?
+
+        #std_sensor = 1 
+
+        #censi_W_A = std_sensor**2 * T1.transform()[:3,:3]@censi[3][:3,:3]@(T1.transform()[:3,:3].T)
+        #bonna_W_A = std_sensor**2 * T1.transform()[:3,:3]@bonna[3][:3,:3]@(T1.transform()[:3,:3].T)
 
         # the mean is T in T0 and T1 in world
-        cov_samples.append((T1.transform(), cov_w_A)) 
+        
 
         #get sample points 2d to visualize covergence clusters
-        sample_points2 = np.array([[samples[i][0,3], samples[i][1,3], 0] for i in range(num_samples)])
-        sample_points2_w = transform_cloud(sample_points2, T0.transform())
+        #sample_points2 = np.array([[samples[i][0,3], samples[i][1,3], 0] for i in range(num_samples)])
+        #sample_points2_w = transform_cloud(sample_points2, T0.transform())
 
-        plot_results_2d(ax, c0_w, sample_points2_w, T1.transform()[:2,3], cov_w_A[:2,:2])
+        
+
+        #plot_results_2d(ax, c0_w, sample_points2_w, T1.transform()[:2,3], cov_w_A[:2,:2], censi_W_A[:2,:2], bonna_W_A[:2,:2])
 
         
     #save_samples(cov_samples)
 
     #plot
-    ax.relim()
-    ax.autoscale_view()
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.show(block=True)
+    #ax.relim()
+    #ax.autoscale_view()
+    #plt.gca().set_aspect('equal', adjustable='box')
+    #ax.legend(["clouds", "sample points", "sample cov", "censi", "bonnabel"])
+    #plt.show(block=True)
