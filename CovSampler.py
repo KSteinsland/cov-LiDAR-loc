@@ -108,6 +108,9 @@ def icp_with_cov(pc_ref, pc_in, T_init):
 
     return T, censi, bonnabel
 
+def get_cloud(path):
+    return np.genfromtxt(path, delimiter=',')
+
 def save_samples(samples):
     import datetime 
     import pickle
@@ -236,10 +239,14 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
             cloud_ref, cloud_in = clouds_path_list[cld_indx], clouds_path_list[cld_indx+1]
             T_gt_ref, T_gt_in = T_gt[cld_indx], T_gt[cld_indx+1]
             T_rel = T_gt_ref.inverse()*T_gt_in
-
+            
+            #debug
             c0, c1 = clouds[cld_indx], clouds[cld_indx + 1]
             c1_0 = transform_cloud(c1, T_rel.transform())
             vis_pc([c0, c1]) #this is correct
+
+            """ c0_csv, c1_csv = get_cloud(cloud_ref), get_cloud(cloud_in)
+            vis_pc([c0_csv, c1_csv]) """
 
             # a place to temorarily store cloud with added noise
             working_cloud_path = result_dataset_path / Path('working_noisy_cloud')
@@ -300,7 +307,7 @@ if __name__ == "__main__":
     base_path = Path('/home/ksteins/covest/')
     config_path = base_path / Path('./libpointmatcher/martin/config/base_config.yaml')
 
-    cloud_dir = "20221005-204202"
+    cloud_dir = "20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
     results_path = base_path / Path("./results_new") / cloud_dir
     os.makedirs(results_path, exist_ok=True)
