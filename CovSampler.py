@@ -36,29 +36,7 @@ def TtoSE3(T):
     t = T[:3, 3]
     return SE3(np.concatenate((t, q)))
 
-def calc_mean_cov(tf_list, T_gt):
-    n = len(tf_list)
-    T_bar = TtoSE3(T_gt)
-    for t in range(30):
-        #compute mean tangent vector at T_bar
-        psi_bar = 1/n * sum((T_bar.inverse()*TtoSE3(T)).log().coeffs() 
-                    for T in tf_list) 
-        #update
-        T_bar_last = T_bar
-        T_bar = T_bar*(SE3Tangent(psi_bar).exp())
 
-        eps = np.linalg.norm((T_bar.inverse()*T_bar_last).log().coeffs())
-        if eps < 1e-16:
-            break
-
-    mean = T_bar.log().coeffs()
-    cov = 1/(n-1) * sum(
-         np.outer(
-            (T_bar.inverse()*TtoSE3(T)).log().coeffs(),
-            (T_bar.inverse()*TtoSE3(T)).log().coeffs())
-         for T in tf_list)
-
-    return mean, cov
 
 def str_T(T):
     if T.ndim == 1:
@@ -267,25 +245,56 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
             with open(cov_result_save_path, 'wb') as f:
                 pickle.dump((censi_cov, samples, T_rel.transform()), f)
 
+def calc_mean_cov(tf_list, T_gt):
+    n = len(tf_list)
+    T_bar = TtoSE3(T_gt)
+    for t in range(30):
+        #compute mean tangent vector at T_bar
+        psi_bar = 1/n * sum((T_bar.inverse()*TtoSE3(T)).log().coeffs() 
+                    for T in tf_list) 
+        #update
+        T_bar_last = T_bar
+        T_bar = T_bar*(SE3Tangent(psi_bar).exp())
+
+        eps = np.linalg.norm((T_bar.inverse()*T_bar_last).log().coeffs())
+        if eps < 1e-16:
+            break
+
+    mean = T_bar.log().coeffs()
+   
+    cov = 1/(n-1) * sum(
+         np.outer(
+            (T_bar.inverse()*TtoSE3(T)).log().coeffs(),
+            (T_bar.inverse()*TtoSE3(T)).log().coeffs())
+         for T in tf_list)
+
+    return mean, cov
 
 def results_reg_sens_noise(results_path):
     noise_level_result = sorted(glob.glob(str(results_path) + "/noise_*"))
     noise_levels = [int(n.split('_')[-1])/10000 for n in noise_level_result]
     for i, lvl in enumerate(noise_levels):
+        if lvl == 0.0: continue
         results = sorted(glob.glob(str(noise_level_result[i]) + "/*"))
         for r in results:
             #if int(r.split('_')[-1].split('.')[0]) != 18: continue
             with open(r, 'rb') as f:
                 censi_cov, samples, T_rel = pickle.load(f)
                 sample_mean, sample_cov = calc_mean_cov(samples, T_rel)
-            
+                T_bar = SE3Tangent(sample_mean).exp()
+                
+                #sample_points2d = transform_cloud(sample_points2d, SE3Tangent(sample_mean).exp().inverse().transform())
+                samples_rel_Tbar = [ (T_bar.inverse()*TtoSE3(T)).transform() for T in samples]
+                sample_points2d = np.array([[s[0,3], s[1,3], 0] for s in samples_rel_Tbar])
+
+                #A = T_bar.inverse().adj() 
+                #censi_cov_Tbar = A@censi_cov@A.T
+                
                 #plot 2d 
-                sample_points2d = np.array([[s[0,3], s[1,3], 0] for s in samples])
-                #sample_points2d_t = transform_cloud(sample_points2d, inv(T_rel))
                 fig, ax = plt.subplots()
                 ax.plot(sample_points2d[:,0], sample_points2d[:,1], 'ro', label="samples")
-                plot_ellipse(ax, sample_mean[:2], sample_cov[:2], fill_color='red', label="sample cov")
-                plot_ellipse(ax, sample_mean[:2], censi_cov[:2], fill_color='blue', label="censi")
+                plot_ellipse(ax, [0,0], sample_cov[:2,:2], fill_color='red', label="sample cov")
+                plot_ellipse(ax, [0,0], censi_cov[:2,:2], fill_color='blue', label="censi")
                 plt.legend(loc="best")
                 plt.title(f"Sensor noise standard deviation: {lvl}")
                 #plt.savefig(f'./sample_and_censi_v_noise/clouds{i}and{i+1}_noise_{std_sensor_noise}.png')
@@ -313,7 +322,7 @@ if __name__ == "__main__":
     numb_mc_samples = 100
     std_sensor_noise_levels = [n/1000 for n in range(51)]
     
-    cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path, numb_mc_samples, std_sensor_noise_levels, overwrite=True)
+    #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path, numb_mc_samples, std_sensor_noise_levels, overwrite=True)
     results_reg_sens_noise(results_path)
 
 
