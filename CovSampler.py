@@ -13,30 +13,12 @@ import glob
 import subprocess
 import pickle
 
-""" def calc_mean_cov(tf_list, T_gt):
-    n = len(tf_list)
-    mean = np.zeros(6)
-    cov = np.zeros((6,6))
-    for T in tf_list: 
-        q = tf.transformations.quaternion_from_matrix(T)
-        t = T[:3, 3]
-        tf_m = SE3(np.concatenate((t, q)))
-        tf_t = (T_gt.inverse()*tf_m).log().coeffs()
-        #tf_t = (tf_m*T_gt.inverse()).log().coeffs()
-        mean += tf_t
-        cov += np.outer(tf_t, tf_t)
-    mean = mean / n
-    cov = cov / (n - 1)
-    t = np.trace(cov)
-    return mean, cov """
 
 def TtoSE3(T):
     #fix
     q = tf.transformations.quaternion_from_matrix(T)
     t = T[:3, 3]
     return SE3(np.concatenate((t, q)))
-
-
 
 def str_T(T):
     if T.ndim == 1:
@@ -117,14 +99,6 @@ def icp_with_cov(pc_ref, pc_in, T_init):
 def get_cloud(path):
     return np.genfromtxt(path, delimiter=',')
 
-def save_samples(samples):
-    import datetime 
-    import pickle
-    dt = datetime.datetime.now()
-    timestamp = dt.strftime("%Y%m%d-%H%M%S")
-    with open(f"covariances/{timestamp}.p", "wb") as f:
-        pickle.dump(samples, f)
-
 def plot_ellipse(ax, mean, cov, n=50, chi2_val=9.21, fill_alpha=0., fill_color='lightsteelblue', label=None):
     u, s, v = np.linalg.svd(cov)
     scale = np.sqrt(chi2_val * s)
@@ -156,12 +130,11 @@ def add_range_noise_to_cloud(cloud, std_noise):
     noise = std_noise * dirs * np.random.normal(size=cloud.shape)
     return cloud + noise
 
-
 def add_noise_to_clouds(clouds_path, result_save_path, std_noise):
     clouds_path_list = sorted(glob.glob(str(clouds_path) + "/*"))
     for cloud_path in clouds_path_list:
         cloud = np.genfromtxt(cloud_path, delimiter=',')
-        cloud_noisy = add_noise_to_cloud(cloud, std_noise)
+        cloud_noisy = add_range_noise_to_cloud(cloud, std_noise)
         save_path = str(result_save_path) + "/" + cloud_path.split('/')[-1]
         np.savetxt(save_path, cloud_noisy, delimiter=",")
 
@@ -276,7 +249,7 @@ def calc_mean_cov(tf_list, T_gt):
 
     return mean, cov
 
-def plot_covariance(censi_cov, sample_cov, sample_points2d, noise_level):
+def plot_covariance(censi_cov, sample_cov, sample_points2d, noise_level, scan_number, results_figures_path, save=False):
     t_censi = np.trace(censi_cov[:2,:2])
     t_sample = np.trace(sample_cov[:2,:2])
 
@@ -307,10 +280,13 @@ def plot_covariance(censi_cov, sample_cov, sample_points2d, noise_level):
     
     plt.legend(loc="best")
     plt.title(f"Sensor noise standard deviation: {noise_level}. \n Angle error: {d_angle}, trace censi: {t_censi:.3e}, trace sample: {t_sample:.3e}")
-    #plt.savefig(f'./sample_and_censi_v_noise/clouds{i}and{i+1}_noise_{std_sensor_noise}.png')
-    plt.show()
+    if save:
+        s = str(format(noise_level, '.4f')).replace('.','') 
+        save_path = results_figures_path / Path(f'./clouds{scan_number}and{scan_number+1}_noise_{s}.png') 
+        plt.savefig(save_path)
+    else: plt.show()
 
-def results_reg_sens_noise(results_path):
+def results_reg_sens_noise(results_path, results_figures_path):
     noise_level_result = sorted(glob.glob(str(results_path) + "/noise_*"))
     noise_levels = [int(n.split('_')[-1])/10000 for n in noise_level_result][:-1]
 
@@ -319,7 +295,7 @@ def results_reg_sens_noise(results_path):
     angle_errors_avg = []
 
     for i, lvl in enumerate(noise_levels):
-        if lvl == 0.0: continue
+        #if lvl not in [0.0, 0.001, 0.005, 0.01, 0.05, 0.1]: continue
         results = sorted(glob.glob(str(noise_level_result[i]) + "/*"))
 
         traces_sample_cov = []
@@ -328,9 +304,9 @@ def results_reg_sens_noise(results_path):
 
         for r in results:
             #for every registraion at this noise level
-            
-            scans_to_test = [18, 20]
-            if int(r.split('_')[-1].split('.')[0]) not in scans_to_test: continue
+            scans_to_use = [18]
+            scan_number = int(r.split('_')[-1].split('.')[0])
+            if scan_number not in scans_to_use: continue
             with open(r, 'rb') as f:
                 censi_cov, samples, T_rel = pickle.load(f)
                 sample_mean, sample_cov = calc_mean_cov(samples, T_rel)
@@ -340,8 +316,8 @@ def results_reg_sens_noise(results_path):
                 samples_rel_Tbar = [ (T_bar.inverse()*TtoSE3(T)).transform() for T in samples]
                 sample_points2d = np.array([[s[0,3], s[1,3], 0] for s in samples_rel_Tbar])
 
-                A = T_bar.inverse().adj() 
-                censi_cov = A@censi_cov@A.T
+                """ A = inv(T_rel)[:2,:2]
+                censi_cov = A@censi_cov[:2,:2]@A.T """
 
                 #trace
                 traces_censi_cov.append(np.trace(censi_cov[:2,:2]))
@@ -359,7 +335,7 @@ def results_reg_sens_noise(results_path):
                 if d_angle > 90: d_angle = 180 - d_angle
                 angle_errors.append(d_angle)
                 
-                #plot_covariance(censi_cov, sample_cov, sample_points2d, lvl)
+                plot_covariance(censi_cov, sample_cov, sample_points2d, lvl, scan_number, results_figures_path, save=True)
 
         traces_sample_cov_avg.append(np.average(traces_sample_cov))
         traces_censi_cov_avg.append(np.average(traces_censi_cov))
@@ -372,11 +348,21 @@ def results_reg_sens_noise(results_path):
     print("trace MSE: ", trace_MSE)
     print("average angle error: ", np.average(angle_errors_avg))
     
-    """ fig, ax = plt.subplots()
-    ax.plot(noise_levels, traces_sample_cov, label="trace sample cov")
-    ax.plot(noise_levels, traces_censi_cov, label="trace cenis cov")
-    ax.plot(noise_levels, angle_errors_avg)
-    plt.show() """
+    fig, ax = plt.subplots()
+    ax.plot(noise_levels, traces_sample_cov_avg, label="trace sample cov")
+    ax.plot(noise_levels, traces_censi_cov_avg, label="trace cenis cov")
+    plt.title("Sampeled variance vs Censi")
+    plt.xlabel("sensor noise standard deviation")
+    plt.legend(loc="best")
+    plt.savefig(results_figures_path / Path("./noiseCov.png"))
+    #plt.show()
+
+    fig, ax = plt.subplots()
+    ax.plot(noise_levels, angle_errors_avg, label="")
+    plt.xlabel("sensor noise standard deviation")
+    plt.title("Angle error degrees")
+    plt.savefig(results_figures_path / Path("./angleError.png"))
+    #plt.show()
 
 if __name__ == "__main__":
     np.random.seed(0)
@@ -387,7 +373,9 @@ if __name__ == "__main__":
 
     cloud_dir = "20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
-    results_path = base_path / Path("./results_new") / cloud_dir
+    results_path = base_path / Path("./result_icp_range_noise") / cloud_dir
+    results_figures_path = base_path / Path("imgs")
+    os.makedirs(results_figures_path, exist_ok=True)
     os.makedirs(results_path, exist_ok=True)
 
     #get gt transforms
@@ -400,8 +388,8 @@ if __name__ == "__main__":
     numb_mc_samples = 100
     std_sensor_noise_levels = [n/1000 for n in range(51)]
 
-    #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path, numb_mc_samples, std_sensor_noise_levels, overwrite=True)
-    results_reg_sens_noise(results_path)
+    cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path, numb_mc_samples, std_sensor_noise_levels, overwrite=True)
+    #results_reg_sens_noise(results_path, results_figures_path)
 
 
 
@@ -410,8 +398,7 @@ if __name__ == "__main__":
     
 
 
-def cov_registration_odom_noise():
-    pass
+
 
 
 
