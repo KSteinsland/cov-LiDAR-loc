@@ -151,6 +151,12 @@ def add_noise_to_cloud(cloud, std_noise):
     noise = std_noise * np.random.normal(size=cloud.shape)
     return cloud + noise
 
+def add_range_noise_to_cloud(cloud, std_noise):
+    dirs = cloud / np.linalg.norm(cloud, axis=1, keepdims=True)
+    noise = std_noise * dirs * np.random.normal(size=cloud.shape)
+    return cloud + noise
+
+
 def add_noise_to_clouds(clouds_path, result_save_path, std_noise):
     clouds_path_list = sorted(glob.glob(str(clouds_path) + "/*"))
     for cloud_path in clouds_path_list:
@@ -281,7 +287,7 @@ def results_reg_sens_noise(results_path):
         if lvl == 0.0: continue
         results = sorted(glob.glob(str(noise_level_result[i]) + "/*"))
         for r in results:
-            #if int(r.split('_')[-1].split('.')[0]) != 18: continue
+            if int(r.split('_')[-1].split('.')[0]) != 18: continue
             with open(r, 'rb') as f:
                 censi_cov, samples, T_rel = pickle.load(f)
                 sample_mean, sample_cov = calc_mean_cov(samples, T_rel)
@@ -308,9 +314,6 @@ def results_reg_sens_noise(results_path):
                 d_angle = np.arccos(ec[:,max_c].dot(es[:,max_s]))
                 d_angle = np.round(d_angle * 180 / np.pi, 0)
                 if d_angle > 90: d_angle = 180 - d_angle
-                
-
-                print(wc)
                 
                 #plot cov 2d 
                 fig, ax = plt.subplots()
@@ -361,8 +364,10 @@ if __name__ == "__main__":
     numb_mc_samples = 100
     std_sensor_noise_levels = [n/1000 for n in range(51)]
     
+    vis_pc([add_range_noise_to_cloud(clouds[5], 0.1)])
+
     #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path, numb_mc_samples, std_sensor_noise_levels, overwrite=True)
-    results_reg_sens_noise(results_path)
+    #results_reg_sens_noise(results_path)
 
 
 
