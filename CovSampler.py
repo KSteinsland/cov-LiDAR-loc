@@ -158,61 +158,9 @@ def inv(T):
     T_inv[:3, 3] = -T_inv[:3, :3].dot(T[:3, 3])
     return T_inv
 
-def cov_registration_odom_noise(cloud_dataset_path, T_gt, result_dataset_path, num_samples, odom_noise_levels, clouds_mask=None, std_sensor_noise = 0.008, overwrite=False):
-    """
-    odom_noise_levels should be list of tuples [(std_pos, std_rot)]
-    """
 
-    #make dirs
-    os.makedirs(result_dataset_path, exist_ok=True)
 
-    for std_pos, std_rot in odom_noise_levels:
-        str_pos = str(format(std_pos, '.4f')).replace('.','') 
-        str_rot = str(format(std_rot, '.4f')).replace('.','') 
-        noise_lvl_result_path = result_dataset_path / Path(f'./std_pos_{str_pos}_std_rot_{str_rot}')
-        os.makedirs(noise_lvl_result_path, exist_ok=True)
-
-        clouds_path_list = sorted(glob.glob(str(cloud_dataset_path) + "/*"))
-
-        for cld_indx in range(len(clouds_path_list)-1):
-            if clouds_mask != None and cld_indx not in clouds_mask: continue
-            
-            cov_result_save_path = noise_lvl_result_path / Path(f'cloud_pair_{cld_indx:03d}.p')
-            if os.path.exists(cov_result_save_path) and not overwrite:
-                print(cov_result_save_path, " already exist")
-                continue
-
-            cloud_ref, cloud_in = clouds_path_list[cld_indx], clouds_path_list[cld_indx+1]
-            T_gt_ref, T_gt_in = T_gt[cld_indx], T_gt[cld_indx+1]
-            T_rel = T_gt_ref.inverse()*T_gt_in  # ground truth relative transform 
-
-            #sample cov
-            samples = [] 
-            for i in range(num_samples):
-
-                # a place to temorarily store cloud with added noise
-                working_cloud_path = result_dataset_path / Path('working_noisy_cloud')
-                os.makedirs(working_cloud_path, exist_ok=True)
-                noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, std_sensor_noise)
-                
-                # do a pertubation to T_rel
-                xi = np.hstack((np.random.normal(0, std_pos, 3),
-                                np.random.normal(0, std_rot, 3)))
-
-                T_init = SE3Tangent(xi).exp()*T_rel
-                
-                icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init.transform())
-                samples.append(icp_transform)
-            
-            #censi cov
-            icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init.transform())
-            censi_cov = std_sensor_noise **2 * censi
-
-            #save
-            with open(cov_result_save_path, 'wb') as f:
-                pickle.dump((censi_cov, samples, T_rel.transform()), f) 
-
-def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path, num_samples, std_sensor_noise_levels, clouds_mask=None, overwrite=False):
+def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path, num_samples, std_sensor_noise_levels, odom_noise=None, clouds_mask=None, overwrite=False):
     """
     directories:
     - get path to a folder of clouds
@@ -270,13 +218,35 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
             #sample cov
             samples = [] 
             for i in range(num_samples):
+                
+                T_init = T_rel.transform()
+                if odom_noise is not None:
+                    std_pos, std_rot = odom_noise
+                    xi = np.hstack((np.random.normal(0, std_pos, 3),
+                                    np.random.normal(0, std_rot, 3)))
+                    T_init = (SE3Tangent(xi).exp()*T_rel).transform()
+
                 noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, noise_level)
-                icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_rel.transform())
+                icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
                 samples.append(icp_transform)
+
+                #test
+                c0, c1 = get_cloud(cloud_ref), get_cloud(cloud_in)
+                vis_pc([c0, c1])
+
+                vis_pc([c0, transform_cloud(c1, T_init)])
+
             
             #censi cov
+            T_init = T_rel.transform()
+            if odom_noise is not None:
+                std_pos, std_rot = odom_noise
+                xi = np.hstack((np.random.normal(0, std_pos, 3),
+                                np.random.normal(0, std_rot, 3)))
+                T_init = (SE3Tangent(xi).exp()*T_rel).transform()
+
             noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, noise_level)
-            icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_rel.transform())
+            icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
             censi_cov = noise_level **2 * censi
 
             #save
@@ -341,104 +311,22 @@ def plot_covariance(censi_cov, sample_cov, sample_points2d, scan_number, results
     if noise_level != None:
         plt.title(f"Sensor noise standard deviation: {noise_level}. \n Angle error: {d_angle}, trace censi: {t_censi:.3e}, trace sample: {t_sample:.3e}")
     else:
-        plt.title(f"Sensor noise standard deviation: {0.008}. \n Odometry standard deviation, pos: {std_pos}, rot: {std_rot}. \n Angle error: {d_angle}, trace censi: {t_censi:.3e}, trace sample: {t_sample:.3e}")
+        plt.title(f"Odometry standard deviation, pos: {std_pos}, rot: {std_rot}. \n Angle error: {d_angle}, trace censi: {t_censi:.3e}, trace sample: {t_sample:.3e}")
     if save:
-        s = str(format(noise_level, '.4f')).replace('.','') 
-        save_path = results_figures_path / Path(f'./clouds{scan_number}and{scan_number+1}_noise_{s}.png') 
+        save_path = results_figures_path / Path(f'./clouds{scan_number}and{scan_number+1}_noise_pos{std_pos}_noise_rot{std_rot}.png') 
         plt.savefig(save_path)
     else: plt.show()
 
-def results_reg_odom_noise(results_path, results_figures_path, clouds_mask=None, save=False):
-    noise_level_result = sorted(glob.glob(str(results_path) + "/std_*"))
-    noise_levels = [ ]
-    for n in noise_level_result: 
-        std_pos = int(n.split('_')[-4])/10000 #this is too hacky, fix later
-        std_rot = int(n.split('_')[-1])/10000
-        noise_levels.append((std_pos, std_rot))
-    
-    
-    traces_sample_cov_avg = []
-    traces_censi_cov_avg = []
-    angle_errors_avg = []
 
-    for i, (std_pos, std_rot) in enumerate(noise_levels):
-        #if lvl not in [0.0, 0.001, 0.005, 0.01, 0.05, 0.1]: continue
-        results = sorted(glob.glob(str(noise_level_result[i]) + "/*"))
-
-        traces_sample_cov = []
-        traces_censi_cov = []
-        angle_errors = []
-
-        for r in results:
-            #for every registraion at this noise level
-            scan_number = int(r.split('_')[-1].split('.')[0])
-            # only do clouds in mask
-            if clouds_mask != None and scan_number not in clouds_mask: continue
-            #if scan_number not in scans_to_use: continue
-            with open(r, 'rb') as f:
-                censi_cov, samples, T_rel = pickle.load(f)
-                sample_mean, sample_cov = calc_mean_cov(samples, T_rel)
-                T_bar = SE3Tangent(sample_mean).exp()
-                
-                #sample_points2d = transform_cloud(sample_points2d, SE3Tangent(sample_mean).exp().inverse().transform())
-                samples_rel_Tbar = [ (T_bar.inverse()*TtoSE3(T)).transform() for T in samples]
-                sample_points2d = np.array([[s[0,3], s[1,3], 0] for s in samples_rel_Tbar])
-
-                """ A = inv(T_rel)[:2,:2]
-                censi_cov = A@censi_cov[:2,:2]@A.T """
-
-                #trace
-                traces_censi_cov.append(np.trace(censi_cov[:2,:2]))
-                traces_sample_cov.append(np.trace(sample_cov[:2,:2]))
-
-                #eigenvalues
-                wc, ec = np.linalg.eig(censi_cov[:2,:2])
-                ws, es = np.linalg.eig(sample_cov[:2,:2])
-
-                max_c, min_c = wc.argmax(), wc.argmin()
-                max_s, min_s = ws.argmax(), ws.argmin()
-
-                d_angle = np.arccos(ec[:,max_c].dot(es[:,max_s]))
-                d_angle = np.round(d_angle * 180 / np.pi, 0)
-                if d_angle > 90: d_angle = 180 - d_angle
-                angle_errors.append(d_angle)
-                
-                plot_covariance(censi_cov, sample_cov, sample_points2d, scan_number, results_figures_path, save=save, std_pos=std_pos, std_rot=std_rot)
-
-        traces_sample_cov_avg.append(np.average(traces_sample_cov))
-        traces_censi_cov_avg.append(np.average(traces_censi_cov))
-        angle_errors_avg.append(np.average(angle_errors))
-
-    
-    """ trace_MSE = np.square(np.subtract(traces_censi_cov_avg, traces_sample_cov_avg)).mean()
-
-    #plot traces
-    print("trace MSE: ", trace_MSE)
-    print("average angle error: ", np.average(angle_errors_avg))
-    
-    fig, ax = plt.subplots()
-    ax.plot(noise_levels, traces_sample_cov_avg, label="trace sample cov")
-    ax.plot(noise_levels, traces_censi_cov_avg, label="trace cenis cov")
-    plt.title("Sampeled variance vs Censi")
-    plt.xlabel("sensor noise standard deviation")
-    plt.legend(loc="best")
-    if save: plt.savefig(results_figures_path / Path("./noiseCov.png"))
-    else: plt.show()
-
-    fig, ax = plt.subplots()
-    ax.plot(noise_levels, angle_errors_avg, label="")
-    plt.xlabel("sensor noise standard deviation")
-    plt.title("Angle error degrees")
-    if save: plt.savefig(results_figures_path / Path("./angleError.png"))
-    else: plt.show() """
 
 def results_reg_sens_noise(results_path, results_figures_path, save=False, clouds_mask=None, noise_levels_mask=None, plot_cov=False, plot_trace=True):
     noise_level_result = sorted(glob.glob(str(results_path) + "/noise_*"))
-    noise_levels = [int(n.split('_')[-1])/10000 for n in noise_level_result]
+    noise_levels = ([int(n.split('_')[-1])/10000 for n in noise_level_result])
     #filter noise levels after mask
     if noise_levels_mask != None: 
         noise_levels = list(set(noise_levels).intersection(noise_levels_mask))
         noise_level_result = list(filter(lambda n: int(n.split('_')[-1])/10000 in noise_levels_mask, noise_level_result))
+    noise_levels = np.sort(noise_levels)
 
     traces_sample_cov_avg = []
     traces_censi_cov_avg = []
@@ -523,13 +411,11 @@ if __name__ == "__main__":
 
     cloud_dir = "20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
-    results_path_sensor_noise = base_path / Path("./result_icp_range_noise") / cloud_dir
-    results_path_odom_noise = base_path / Path("./result_odom_noise") / cloud_dir
-    results_figures_path = base_path / Path("imgs")
+    results_path_sensor_noise = base_path / Path("./result_odom_and_sensor_noise") / cloud_dir
+    results_figures_path = base_path / Path("./imgs")
     os.makedirs(results_figures_path, exist_ok=True)
     os.makedirs(results_path_sensor_noise, exist_ok=True)
-    os.makedirs(results_path_odom_noise, exist_ok=True)
-
+    
     #get gt transforms
     S = PCSampler()
     S.load_samples()
@@ -538,17 +424,14 @@ if __name__ == "__main__":
     transforms_se3 = [SE3(T) for T in transforms]
 
     numb_mc_samples = 100
-    clouds_mask = [2] #list of clouds to use in dataset
-    std_sensor_noise_levels = [0.008] # sigma sensor
-    odom_noise_levels = [(0.01, 0.001), (0.01, 0.001), (0.1, 0.01), (0.5, 0.05)] # sigma T_odom (pos, rot) 
+    clouds_mask = [1,2,18] #list of clouds to use in dataset
+    std_sensor_noise_levels = [0.001, 0.005, 0.01] # sigma sensor
+    odom_noise = (0.08, 0.04) #pos, rot
 
     #sensor noise 
-    #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, numb_mc_samples, std_sensor_noise_levels, overwrite=False)
-    #results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, clouds_mask=clouds_mask, plot_cov=True, plot_trace=False)
-    
-    #odom noise
-    cov_registration_odom_noise(dataset_clouds_path, transforms_se3, results_path_odom_noise, numb_mc_samples, odom_noise_levels, clouds_mask=clouds_mask, overwrite=True)
-    results_reg_odom_noise(results_path_odom_noise, results_figures_path, clouds_mask=clouds_mask)
+    cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, numb_mc_samples, std_sensor_noise_levels, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=True)
+    results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, clouds_mask=clouds_mask, plot_cov=True, plot_trace=False)
+ 
     
 
 
@@ -558,12 +441,127 @@ if __name__ == "__main__":
 
 
 
+"""
+def cov_registration_odom_noise(cloud_dataset_path, T_gt, result_dataset_path, num_samples, odom_noise_levels, clouds_mask=None, std_sensor_noise = 0.008, overwrite=False):
+
+    #make dirs
+    os.makedirs(result_dataset_path, exist_ok=True)
+
+    for std_pos, std_rot in odom_noise_levels:
+        str_pos = str(format(std_pos, '.4f')).replace('.','') 
+        str_rot = str(format(std_rot, '.4f')).replace('.','') 
+        noise_lvl_result_path = result_dataset_path / Path(f'./std_pos_{str_pos}_std_rot_{str_rot}')
+        os.makedirs(noise_lvl_result_path, exist_ok=True)
+
+        clouds_path_list = sorted(glob.glob(str(cloud_dataset_path) + "/*"))
+
+        for cld_indx in range(len(clouds_path_list)-1):
+            if clouds_mask != None and cld_indx not in clouds_mask: continue
+            
+            cov_result_save_path = noise_lvl_result_path / Path(f'cloud_pair_{cld_indx:03d}.p')
+            if os.path.exists(cov_result_save_path) and not overwrite:
+                print(cov_result_save_path, " already exist")
+                continue
+
+            cloud_ref, cloud_in = clouds_path_list[cld_indx], clouds_path_list[cld_indx+1]
+            T_gt_ref, T_gt_in = T_gt[cld_indx], T_gt[cld_indx+1]
+            T_rel = T_gt_ref.inverse()*T_gt_in  # ground truth relative transform 
+
+            #sample cov
+            samples = [] 
+            for i in range(num_samples):
+
+                # a place to temorarily store cloud with added noise
+                working_cloud_path = result_dataset_path / Path('working_noisy_cloud')
+                os.makedirs(working_cloud_path, exist_ok=True)
+                noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, std_sensor_noise)
+                
+                # do a pertubation to T_rel
+                xi = np.hstack((np.random.normal(0, std_pos, 3),
+                                np.random.normal(0, std_rot, 3)))
+
+                T_init = SE3Tangent(xi).exp()*T_rel
+                
+                icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init.transform())
+                samples.append(icp_transform)
+            
+            #censi cov
+            icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init.transform())
+            censi_cov = std_sensor_noise **2 * censi
+
+            #save
+            with open(cov_result_save_path, 'wb') as f:
+                pickle.dump((censi_cov, samples, T_rel.transform()), f) 
+
+"""
 
 
 
 
 
 
+"""
+def results_reg_odom_noise(results_path, results_figures_path, clouds_mask=None, save=False):
+    noise_level_result = sorted(glob.glob(str(results_path) + "/std_*"))
+    noise_levels = [ ]
+    for n in noise_level_result: 
+        std_pos = int(n.split('_')[-4])/10000 #this is too hacky, fix later
+        std_rot = int(n.split('_')[-1])/10000
+        noise_levels.append((std_pos, std_rot))
+    
+    
+    traces_sample_cov_avg = []
+    traces_censi_cov_avg = []
+    angle_errors_avg = []
+
+    for i, (std_pos, std_rot) in enumerate(noise_levels):
+        #if lvl not in [0.0, 0.001, 0.005, 0.01, 0.05, 0.1]: continue
+        results = sorted(glob.glob(str(noise_level_result[i]) + "/*"))
+
+        traces_sample_cov = []
+        traces_censi_cov = []
+        angle_errors = []
+
+        for r in results:
+            #for every registraion at this noise level
+            scan_number = int(r.split('_')[-1].split('.')[0])
+            # only do clouds in mask
+            if clouds_mask != None and scan_number not in clouds_mask: continue
+            #if scan_number not in scans_to_use: continue
+            with open(r, 'rb') as f:
+                censi_cov, samples, T_rel = pickle.load(f)
+                sample_mean, sample_cov = calc_mean_cov(samples, T_rel)
+                T_bar = SE3Tangent(sample_mean).exp()
+                
+                #sample_points2d = transform_cloud(sample_points2d, SE3Tangent(sample_mean).exp().inverse().transform())
+                samples_rel_Tbar = [ (T_bar.inverse()*TtoSE3(T)).transform() for T in samples]
+                sample_points2d = np.array([[s[0,3], s[1,3], 0] for s in samples_rel_Tbar])
+
+     
+
+                #trace
+                traces_censi_cov.append(np.trace(censi_cov[:2,:2]))
+                traces_sample_cov.append(np.trace(sample_cov[:2,:2]))
+
+                #eigenvalues
+                wc, ec = np.linalg.eig(censi_cov[:2,:2])
+                ws, es = np.linalg.eig(sample_cov[:2,:2])
+
+                max_c, min_c = wc.argmax(), wc.argmin()
+                max_s, min_s = ws.argmax(), ws.argmin()
+
+                d_angle = np.arccos(ec[:,max_c].dot(es[:,max_s]))
+                d_angle = np.round(d_angle * 180 / np.pi, 0)
+                if d_angle > 90: d_angle = 180 - d_angle
+                angle_errors.append(d_angle)
+                
+                plot_covariance(censi_cov, sample_cov, sample_points2d, scan_number, results_figures_path, save=save, std_pos=std_pos, std_rot=std_rot)
+
+        traces_sample_cov_avg.append(np.average(traces_sample_cov))
+        traces_censi_cov_avg.append(np.average(traces_censi_cov))
+        angle_errors_avg.append(np.average(angle_errors))
+
+"""
 
 
 
