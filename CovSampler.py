@@ -15,6 +15,10 @@ import pickle
 from scipy.linalg import block_diag
 from ut import *
 
+matplotlib.rcParams['text.usetex'] = True
+matplotlib.rcParams['axes.titlesize'] = 'x-large'
+matplotlib.rcParams["axes.grid"] = True
+
 
 def TtoSE3(T):
     #fix
@@ -114,7 +118,7 @@ def plot_ellipse(ax, mean, cov, n=50, chi2_val=9.21, fill_alpha=0., fill_color='
     circle_points = (R * scale) @ np.vstack((x.flatten(), y.flatten())) + t
 
     ax.fill(circle_points[0, :], circle_points[1, :], alpha=fill_alpha, facecolor=fill_color)
-    ax.plot(circle_points[0, :], circle_points[1, :], color=fill_color, label=label + " - 3sigma")
+    ax.plot(circle_points[0, :], circle_points[1, :], color=fill_color, label=label)
 
 def plot_results_2d(ax, c0_w, sample_points2_w, mean2_w, cov2x2_w_mc, cov2x2_w_censi, cov2x2_w_bonna, z_lim=1):
     ax.plot(c0_w[c0_w[:,2] > z_lim][:,0], c0_w[c0_w[:,2] > z_lim][:,1], 'bo', markersize=0.1)
@@ -284,45 +288,9 @@ def calc_mean_cov(tf_list, T_gt):
 
     return mean, cov
 
-def plot_covariance(origin, censi_cov, brossard_cov, sample_cov, sample_points2d, scan_number, results_figures_path, save=False, noise_level=None, std_pos=None, std_rot=None):
-    t_censi = np.trace(censi_cov[:2,:2])
-    t_sample = np.trace(sample_cov[:2,:2])
 
-    wc, ec = np.linalg.eig(censi_cov[:2,:2])
-    ws, es = np.linalg.eig(sample_cov[:2,:2])
-
-    max_c, min_c = wc.argmax(), wc.argmin()
-    max_s, min_s = ws.argmax(), ws.argmin()
-
-    d_angle = np.arccos(ec[:,max_c].dot(es[:,max_s]))
-    d_angle = np.round(d_angle * 180 / np.pi, 0)
-    if d_angle > 90: d_angle = 180 - d_angle
     
-    #plot cov 2d 
-    fig, ax = plt.subplots()
-
-    plot_ellipse(ax, origin, censi_cov[:2,:2], fill_color='blue', label="censi")
-    plot_ellipse(ax, origin, brossard_cov[:2,:2], fill_color='green', label="brossard")
-
-    ax.plot(sample_points2d[:,0], sample_points2d[:,1], 'ro', label="samples")
-    plot_ellipse(ax, origin, sample_cov[:2,:2], fill_color='red', label="sample cov")
     
-    """ a_scale, a_width = 2, 1e-2
-    ax.arrow(*[0,0], *ec[:,max_c]*np.sqrt(wc[max_c])*a_scale, width=np.sqrt(wc[max_c])*a_width, color="darkblue")
-    ax.arrow(*[0,0], *ec[:,min_c]*np.sqrt(wc[min_c])*a_scale, width=np.sqrt(wc[min_c])*a_width, color="b")
-
-    ax.arrow(*[0,0], *es[:,max_s]*np.sqrt(ws[max_s])*a_scale, width=np.sqrt(ws[max_s])*a_width, color="darkred")
-    ax.arrow(*[0,0], *es[:,min_s]*np.sqrt(ws[min_s])*a_scale, width=np.sqrt(ws[min_s])*a_width, color="r") """
-    
-    plt.legend(loc="best")
-    if noise_level != None:
-        plt.title(f"Sensor noise standard deviation: {noise_level}. \n Angle error: {d_angle}, trace censi: {t_censi:.3e}, trace sample: {t_sample:.3e}")
-    else:
-        plt.title(f"Odometry standard deviation, pos: {std_pos}, rot: {std_rot}. \n Angle error: {d_angle}, trace censi: {t_censi:.3e}, trace sample: {t_sample:.3e}")
-    if save:
-        save_path = results_figures_path / Path(f'./clouds{scan_number}and{scan_number+1}_noise_pos{std_pos}_noise_rot{std_rot}.png') 
-        plt.savefig(save_path)
-    else: plt.show()
 
 
 def results_reg_sens_noise(results_path, results_figures_path, save=False, clouds_mask=None, noise_levels_mask=None, plot_cov=False, plot_trace=True):
@@ -336,14 +304,18 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
 
     traces_sample_cov_avg = []
     traces_censi_cov_avg = []
-    angle_errors_avg = []
+    traces_brossard_cov_avg = []
+    angle_errors_bross_avg = []
+    angle_errors_censi_avg = []
 
     for i, lvl in enumerate(noise_levels):
         results = sorted(glob.glob(str(noise_level_result[i]) + "/*"))
 
         traces_sample_cov = []
         traces_censi_cov = []
-        angle_errors = []
+        traces_brossard_cov = []
+        angle_errors_censi = []
+        angle_errors_bross = []
 
         for r in results:
             #for every registraion at this noise level
@@ -352,7 +324,7 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
             if clouds_mask != None and scan_number not in clouds_mask: continue
             with open(r, 'rb') as f:
                 censi_cov, brossard_cov, samples, T_rel = pickle.load(f)
-                censi_cov, brossard_cov = censi_cov*1e2, brossard_cov*1e2
+                #censi_cov, brossard_cov = censi_cov*1e1, brossard_cov*1e1
 
                 sample_mean, sample_cov = calc_mean_cov(samples, T_rel)
 
@@ -371,49 +343,113 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                     sample_points2d[n] = mc.transform()[:2,3]    
             
                 #trace
-                traces_censi_cov.append(np.trace(censi_cov[:2,:2]))
-                traces_sample_cov.append(np.trace(sample_cov[:2,:2]))
-
+                t_censi = np.trace(censi_cov[:2,:2])
+                t_sample = np.trace(sample_cov[:2,:2])
+                t_brossard = np.trace(brossard_cov[:2,:2])
+                traces_censi_cov.append(t_censi)
+                traces_sample_cov.append(t_sample)
+                traces_brossard_cov.append(t_brossard)
+                
                 #eigenvalues
                 wc, ec = np.linalg.eig(censi_cov[:2,:2])
                 ws, es = np.linalg.eig(sample_cov[:2,:2])
+                wb, eb = np.linalg.eig(brossard_cov[:2,:2])
 
                 max_c, min_c = wc.argmax(), wc.argmin()
                 max_s, min_s = ws.argmax(), ws.argmin()
+                max_b, min_b = wb.argmax(), wb.argmin()
 
-                d_angle = np.arccos(ec[:,max_c].dot(es[:,max_s]))
-                d_angle = np.round(d_angle * 180 / np.pi, 0)
-                if d_angle > 90: d_angle = 180 - d_angle
-                angle_errors.append(d_angle)
+                d_angle_c = np.arccos(ec[:,max_c].dot(es[:,max_s]))
+                d_angle_c = np.round(d_angle_c * 180 / np.pi, 0)
+                if d_angle_c > 90: d_angle_c = 180 - d_angle_c
+                angle_errors_censi.append(d_angle_c)
+
+                d_angle_b = np.arccos(eb[:,max_b].dot(es[:,max_s]))
+                d_angle_b = np.round(d_angle_b * 180 / np.pi, 0)
+                if d_angle_b > 90: d_angle_b = 180 - d_angle_b
+                angle_errors_bross.append(d_angle_b)
                 
-                if plot_cov: plot_covariance(origin, censi_cov, brossard_cov, sample_cov, sample_points2d, scan_number, results_figures_path, noise_level=lvl, save=save)
+                
+                if plot_cov: 
+                    #plot cov 2d 
+                    fig, ax = plt.subplots()
+
+                    plot_ellipse(ax, origin, censi_cov[:2,:2], fill_color='blue', label="Censis covariance $\sigma$")
+                    plot_ellipse(ax, origin, brossard_cov[:2,:2], fill_color='green', label="Brossards covariance $\sigma$")
+
+                    ax.plot(sample_points2d[:,0], sample_points2d[:,1], 'r.', label="Samples")
+                    plot_ellipse(ax, origin, sample_cov[:2,:2], fill_color='red', label="Sample covariance")
+                    
+                    """ a_scale, a_width = 2, 1e-2
+                    ax.arrow(*[0,0], *ec[:,max_c]*np.sqrt(wc[max_c])*a_scale, width=np.sqrt(wc[max_c])*a_width, color="darkblue")
+                    ax.arrow(*[0,0], *ec[:,min_c]*np.sqrt(wc[min_c])*a_scale, width=np.sqrt(wc[min_c])*a_width, color="b")
+
+                    ax.arrow(*[0,0], *es[:,max_s]*np.sqrt(ws[max_s])*a_scale, width=np.sqrt(ws[max_s])*a_width, color="darkred")
+                    ax.arrow(*[0,0], *es[:,min_s]*np.sqrt(ws[min_s])*a_scale, width=np.sqrt(ws[min_s])*a_width, color="r") """
+                    
+                    plt.legend(loc="best")
+                    plt.title("Covariances")
+                    print(f"""
+                            clouds {scan_number} and {scan_number+1},
+                            Sensor noise: {lvl}. Trace sample cov: {t_sample:.3e},
+                            Censi cov: angle error {d_angle_c}, trace {t_censi:.3e},
+                            Brossard cov: angle error {d_angle_b}, trace {t_brossard:.3e}\n""")
+                
+                    if save:
+                        lvl_s = str(format(lvl, '.4f')).replace('.','') 
+                        save_path = results_figures_path / Path(f'./clouds{scan_number}and{scan_number+1}_noise_{lvl_s}.png') 
+                        plt.savefig(save_path)
+                    else: plt.show()
         
         traces_sample_cov_avg.append(np.average(traces_sample_cov))
         traces_censi_cov_avg.append(np.average(traces_censi_cov))
-        angle_errors_avg.append(np.average(angle_errors))
+        traces_brossard_cov_avg.append(np.average(traces_brossard_cov)) 
+        angle_errors_censi_avg.append(np.average(angle_errors_censi))
+        angle_errors_bross_avg.append(np.average(angle_errors_bross))
 
     
-    trace_MSE = np.square(np.subtract(traces_censi_cov_avg, traces_sample_cov_avg)).mean()
+    trace_MSE_censi = np.square(np.subtract(traces_censi_cov_avg, traces_sample_cov_avg)).mean()
+    trace_MSE_bross = np.square(np.subtract(traces_brossard_cov_avg, traces_sample_cov_avg)).mean()
 
     #plot traces
     if plot_trace:
-        print("trace MSE: ", trace_MSE)
-        print("average angle error: ", np.average(angle_errors_avg))
-        
+        print("trace MSE censi: ", trace_MSE_censi)
+        print("trace MSE bross: ", trace_MSE_bross)
+        print("average angle error censi: ", np.average(angle_errors_censi_avg))
+        print("average angle error bross: ", np.average(angle_errors_bross_avg))
+
+        #censi
         fig, ax = plt.subplots()
         ax.plot(noise_levels, traces_sample_cov_avg, label="trace sample cov")
         ax.plot(noise_levels, traces_censi_cov_avg, label="trace cenis cov")
         plt.title("Sampeled variance vs Censi")
         plt.xlabel("sensor noise standard deviation")
         plt.legend(loc="best")
-        if save: plt.savefig(results_figures_path / Path("./noiseCov.png"))
+        if save: plt.savefig(results_figures_path / Path("./noiseCovCensi.png"))
         else: plt.show()
 
         fig, ax = plt.subplots()
-        ax.plot(noise_levels, angle_errors_avg, label="")
+        ax.plot(noise_levels, angle_errors_censi_avg, label="")
         plt.xlabel("sensor noise standard deviation")
         plt.title("Angle error degrees")
-        if save: plt.savefig(results_figures_path / Path("./angleError.png"))
+        if save: plt.savefig(results_figures_path / Path("./angleErrorCensi.png"))
+        else: plt.show()
+
+        #brossard
+        fig, ax = plt.subplots()
+        ax.plot(noise_levels, traces_sample_cov_avg, label="trace sample cov")
+        ax.plot(noise_levels, traces_brossard_cov_avg, label="trace Brossard cov")
+        plt.title("Sampeled variance vs Brossard")
+        plt.xlabel("sensor noise standard deviation")
+        plt.legend(loc="best")
+        if save: plt.savefig(results_figures_path / Path("./noiseCovBross.png"))
+        else: plt.show()
+
+        fig, ax = plt.subplots()
+        ax.plot(noise_levels, angle_errors_bross_avg, label="")
+        plt.xlabel("sensor noise standard deviation")
+        plt.title("Angle error degrees")
+        if save: plt.savefig(results_figures_path / Path("./angleErrorBross.png"))
         else: plt.show()
 
 if __name__ == "__main__":
@@ -426,7 +462,7 @@ if __name__ == "__main__":
     cloud_dir = "20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
     results_path_sensor_noise = base_path / Path("./results/result_brossard") / cloud_dir
-    results_figures_path = base_path / Path("./imgs")
+    results_figures_path = base_path / Path("./imgs/comp/")
     os.makedirs(results_figures_path, exist_ok=True)
     os.makedirs(results_path_sensor_noise, exist_ok=True)
     
@@ -438,23 +474,18 @@ if __name__ == "__main__":
     transforms_se3 = [SE3(T) for T in transforms]
 
     numb_mc_samples = 100
-    clouds_mask = [2] #list of clouds to use in dataset
-    std_sensor_noise_levels = [0.008] # sigma sensor
+    clouds_mask = [17,18,19,20] #list of clouds to use in dataset
+    std_sensor_noise_levels = [n/1000 for n in range(51)]#[0.02] # sigma sensor
     odom_noise = (0.08, 0.04) #pos, rot
 
-    print(transforms[2])
-    print(transforms[3])
-
     #ut
-    k = 1e+6
-    cov_Q_odo = block_diag(k*odom_noise[0]**2 * np.eye(3), k*odom_noise[1]**2 * np.eye(3))
+    cov_Q_odo = block_diag(odom_noise[0]**2 * np.eye(3), odom_noise[1]**2 * np.eye(3))
     cov_ut = UTSE3(6, 1, 2, 0, cov_Q_odo)  # parameter of unscented transform
 
-    #sensor noise 
-    """ cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
-        numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False) """
+    #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
+    #    numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
     results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
-        clouds_mask=clouds_mask, plot_cov=True, plot_trace=False)
+        clouds_mask=clouds_mask, plot_cov=False, plot_trace=True, save=True)
  
     
 
@@ -593,10 +624,10 @@ def results_reg_odom_noise(results_path, results_figures_path, clouds_mask=None,
                 max_c, min_c = wc.argmax(), wc.argmin()
                 max_s, min_s = ws.argmax(), ws.argmin()
 
-                d_angle = np.arccos(ec[:,max_c].dot(es[:,max_s]))
-                d_angle = np.round(d_angle * 180 / np.pi, 0)
-                if d_angle > 90: d_angle = 180 - d_angle
-                angle_errors.append(d_angle)
+                d_angle_c = np.arccos(ec[:,max_c].dot(es[:,max_s]))
+                d_angle_c = np.round(d_angle_c * 180 / np.pi, 0)
+                if d_angle_c > 90: d_angle_c = 180 - d_angle_c
+                angle_errors.append(d_angle_c)
                 
                 plot_covariance(censi_cov, sample_cov, sample_points2d, scan_number, results_figures_path, save=save, std_pos=std_pos, std_rot=std_rot)
 
