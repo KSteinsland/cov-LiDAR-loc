@@ -352,31 +352,41 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
             if clouds_mask != None and scan_number not in clouds_mask: continue
             with open(r, 'rb') as f:
                 censi_cov, brossard_cov, samples, T_rel = pickle.load(f)
+                censi_cov, brossard_cov = censi_cov*1e2, brossard_cov*1e2
 
-                #sample_mean, sample_cov = calc_mean_cov(samples, T_rel)
+                sample_mean2, sample_cov2 = calc_mean_cov(samples, T_rel)
                 mc_new = np.zeros((len(samples), 6))
                 T_init_inv = TtoSE3(T_rel).inverse()
                 for n in range(len(samples)):
                     mc_new[n] = (TtoSE3(samples[n])*T_init_inv).log().coeffs()  # xi = log( T * T_hat^{-1} )
                 sample_cov = np.cov(mc_new.T)
-                sample_mean = np.mean(mc_new.T)
+                sample_mean = np.mean(mc_new.T, axis=1)
 
                 T_bar = TtoSE3(T_rel)#SE3Tangent(sample_mean).exp()
 
-                print(sample_mean)
-                print(T_bar.log().coeffs())
+                np.set_printoptions(formatter={'float': lambda x: "{0:0.5f}".format(x)})
+                print("cov1 \n", sample_cov, "\n")
+                A = T_bar.adj()
+                sample_cov2 = A@sample_cov2@A.T
+                print("cov2 \n", sample_cov2, "\n")
                 
                 #sample_points2d = transform_cloud(sample_points2d, SE3Tangent(sample_mean).exp().inverse().transform())
                 #samples_rel_Tbar = [ (T_bar.inverse()*TtoSE3(T)).transform() for T in samples]
                 #sample_points2d = np.array([[s[0,3], s[1,3], 0] for s in samples_rel_Tbar])
                 #sample_points2d = np.array([[s[0,3], s[1,3], 0] for s in samples])
-                sample_points2d = np.array([[SE3Tangent(mc).exp().transform()[0,3], SE3Tangent(mc).exp().transform()[1,3], 0] for mc in mc_new]) #try in exp as well
-                sample_points2d = transform_cloud(sample_points2d, inv(T_rel))
-                origin = inv(T_rel)[:2,3]
-                print("origin", origin)
 
-                A = T_bar.inverse().adj()
-                censi_cov = A@censi_cov@A.T
+                print(SE3Tangent(mc_new[2]).exp().transform())
+                print(T_rel)
+        
+                sample_points2d = np.array([[(SE3Tangent(mc).exp()).transform()[0,3], (SE3Tangent(mc).exp()).transform()[1,3], 0] for mc in mc_new]) #try in exp as well
+                
+                #sample_points2d = transform_cloud(sample_points2d, inv(T_rel))
+                origin = [(SE3Tangent(sample_mean).exp()).transform()[:2,3]]
+                
+
+
+
+               
 
                 #trace
                 traces_censi_cov.append(np.trace(censi_cov[:2,:2]))
