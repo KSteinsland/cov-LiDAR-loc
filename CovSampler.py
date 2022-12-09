@@ -289,8 +289,6 @@ def calc_mean_cov(tf_list, T_gt):
     return mean, cov
 
 
-    
-    
 
 
 def results_reg_sens_noise(results_path, results_figures_path, save=False, clouds_mask=None, noise_levels_mask=None, plot_cov=False, plot_trace=True):
@@ -373,12 +371,14 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                 if plot_cov: 
                     #plot cov 2d 
                     fig, ax = plt.subplots()
+                    ax.set_xlabel("x [m]")
+                    ax.set_ylabel("y [m]")
 
-                    plot_ellipse(ax, origin, censi_cov[:2,:2], fill_color='blue', label="Censis covariance $\sigma$")
-                    plot_ellipse(ax, origin, brossard_cov[:2,:2], fill_color='green', label="Brossards covariance $\sigma$")
+                    plot_ellipse(ax, origin, censi_cov[:2,:2], fill_color='blue', label="Censi's cov $3\sigma$.")
+                    plot_ellipse(ax, origin, brossard_cov[:2,:2], fill_color='green', label="Brossard's cov $3\sigma$.")
 
-                    ax.plot(sample_points2d[:,0], sample_points2d[:,1], 'r.', label="Samples")
-                    plot_ellipse(ax, origin, sample_cov[:2,:2], fill_color='red', label="Sample covariance")
+                    ax.plot(sample_points2d[:,0], sample_points2d[:,1], 'r.', label="Samples.")
+                    plot_ellipse(ax, origin, sample_cov[:2,:2], fill_color='red', label="Sample cov $3\sigma$.")
                     
                     """ a_scale, a_width = 2, 1e-2
                     ax.arrow(*[0,0], *ec[:,max_c]*np.sqrt(wc[max_c])*a_scale, width=np.sqrt(wc[max_c])*a_width, color="darkblue")
@@ -388,7 +388,7 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                     ax.arrow(*[0,0], *es[:,min_s]*np.sqrt(ws[min_s])*a_scale, width=np.sqrt(ws[min_s])*a_width, color="r") """
                     
                     plt.legend(loc="best")
-                    plt.title("Covariances")
+                    #plt.title("Covariances")
                     print(f"""
                             clouds {scan_number} and {scan_number+1},
                             Sensor noise: {lvl}. Trace sample cov: {t_sample:.3e},
@@ -397,8 +397,8 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                 
                     if save:
                         lvl_s = str(format(lvl, '.4f')).replace('.','') 
-                        save_path = results_figures_path / Path(f'./clouds{scan_number}and{scan_number+1}_noise_{lvl_s}.png') 
-                        plt.savefig(save_path)
+                        save_path = results_figures_path / Path(f'./clouds{scan_number}and{scan_number+1}_noise_{lvl_s}.eps') 
+                        plt.savefig(save_path, format="eps")
                     else: plt.show()
         
         traces_sample_cov_avg.append(np.average(traces_sample_cov))
@@ -412,44 +412,43 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
     trace_MSE_bross = np.square(np.subtract(traces_brossard_cov_avg, traces_sample_cov_avg)).mean()
 
     #plot traces
+    print("trace MSE censi: ", trace_MSE_censi)
+    print("trace MSE bross: ", trace_MSE_bross)
+    print("average angle error censi: ", np.average(angle_errors_censi_avg))
+    print("average angle error bross: ", np.average(angle_errors_bross_avg))
     if plot_trace:
-        print("trace MSE censi: ", trace_MSE_censi)
-        print("trace MSE bross: ", trace_MSE_bross)
-        print("average angle error censi: ", np.average(angle_errors_censi_avg))
-        print("average angle error bross: ", np.average(angle_errors_bross_avg))
-
         #censi
         fig, ax = plt.subplots()
-        ax.plot(noise_levels, traces_sample_cov_avg, label="trace sample cov")
-        ax.plot(noise_levels, traces_censi_cov_avg, label="trace cenis cov")
-        plt.title("Sampeled variance vs Censi")
-        plt.xlabel("sensor noise standard deviation")
+        ax.plot(noise_levels, traces_sample_cov_avg, label="Trace sample cov.")
+        ax.plot(noise_levels, traces_censi_cov_avg, label="Trace censi's cov.")
+        plt.title("Sampeled variance vs Censi's estimate.")
+        plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
         plt.legend(loc="best")
-        if save: plt.savefig(results_figures_path / Path("./noiseCovCensi.png"))
+        if save: plt.savefig(results_figures_path / Path("./noiseCovCensi.eps", format="eps"))
         else: plt.show()
 
         fig, ax = plt.subplots()
         ax.plot(noise_levels, angle_errors_censi_avg, label="")
-        plt.xlabel("sensor noise standard deviation")
-        plt.title("Angle error degrees")
-        if save: plt.savefig(results_figures_path / Path("./angleErrorCensi.png"))
+        plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
+        plt.title("Angle error degrees.")
+        if save: plt.savefig(results_figures_path / Path("./angleErrorCensi.eps", format="eps"))
         else: plt.show()
 
         #brossard
         fig, ax = plt.subplots()
-        ax.plot(noise_levels, traces_sample_cov_avg, label="trace sample cov")
-        ax.plot(noise_levels, traces_brossard_cov_avg, label="trace Brossard cov")
-        plt.title("Sampeled variance vs Brossard")
-        plt.xlabel("sensor noise standard deviation")
+        ax.plot(noise_levels, traces_sample_cov_avg, label="Trace sample cov.")
+        ax.plot(noise_levels, traces_brossard_cov_avg, label="Trace Brossard's cov.")
+        plt.title("Sampeled variance vs Brossard's estimate.")
+        plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
         plt.legend(loc="best")
-        if save: plt.savefig(results_figures_path / Path("./noiseCovBross.png"))
+        if save: plt.savefig(results_figures_path / Path("./noiseCovBross.eps", format="eps"))
         else: plt.show()
 
         fig, ax = plt.subplots()
         ax.plot(noise_levels, angle_errors_bross_avg, label="")
-        plt.xlabel("sensor noise standard deviation")
-        plt.title("Angle error degrees")
-        if save: plt.savefig(results_figures_path / Path("./angleErrorBross.png"))
+        plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
+        plt.title("Angle error degrees.")
+        if save: plt.savefig(results_figures_path / Path("./angleErrorBross.eps", format="eps"))
         else: plt.show()
 
 if __name__ == "__main__":
@@ -462,7 +461,7 @@ if __name__ == "__main__":
     cloud_dir = "20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
     results_path_sensor_noise = base_path / Path("./results/result_brossard") / cloud_dir
-    results_figures_path = base_path / Path("./imgs/comp/")
+    results_figures_path = base_path / Path("./imgs/comp005/")
     os.makedirs(results_figures_path, exist_ok=True)
     os.makedirs(results_path_sensor_noise, exist_ok=True)
     
@@ -474,8 +473,8 @@ if __name__ == "__main__":
     transforms_se3 = [SE3(T) for T in transforms]
 
     numb_mc_samples = 100
-    clouds_mask = [17,18,19,20] #list of clouds to use in dataset
-    std_sensor_noise_levels = [n/1000 for n in range(51)]#[0.02] # sigma sensor
+    clouds_mask = None#[17,18,19,20] #list of clouds to use in dataset
+    std_sensor_noise_levels = [0.04]#[0.04]#[0.04]#[n/1000 for n in range(51)]#[0.02] # sigma sensor
     odom_noise = (0.08, 0.04) #pos, rot
 
     #ut
@@ -485,11 +484,9 @@ if __name__ == "__main__":
     #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
     #    numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
     results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
-        clouds_mask=clouds_mask, plot_cov=False, plot_trace=True, save=True)
+        clouds_mask=clouds_mask, plot_cov=True, plot_trace=False, save=False)
  
     
-
-
             
 
     
