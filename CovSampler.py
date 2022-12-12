@@ -393,7 +393,8 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                             clouds {scan_number} and {scan_number+1},
                             Sensor noise: {lvl}. Trace sample cov: {t_sample:.3e},
                             Censi cov: angle error {d_angle_c}, trace {t_censi:.3e},
-                            Brossard cov: angle error {d_angle_b}, trace {t_brossard:.3e}\n""")
+                            Brossard cov: angle error {d_angle_b}, trace {t_brossard:.3e},
+                            sample mean: {np.linalg.norm(sample_mean[:2,3])}\n""")
                 
                     if save:
                         lvl_s = str(format(lvl, '.4f')).replace('.','') 
