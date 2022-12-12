@@ -13,6 +13,8 @@ import glob
 import subprocess
 import pickle
 from scipy.linalg import block_diag
+from pingouin import multivariate_normality
+import pandas as pd
 from ut import *
 
 matplotlib.rcParams['text.usetex'] = True
@@ -221,7 +223,7 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
             os.makedirs(working_cloud_path, exist_ok=True)
 
             #simulate noisy odometry
-            T_init = T_rel.transform()
+            """ T_init = T_rel.transform()
             if odom_noise is not None:
                 std_pos, std_rot = odom_noise
                 xi = np.hstack((np.random.normal(0, std_pos, 3),
@@ -242,26 +244,28 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
                 icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init_n)
                 T_ut.append(TtoSE3(icp_transform))
             _, _, cov_ut, _ = ut.unscented_transform_se3(T_ut)
-            cov_brossard = (noise_level ** 2) * bonnabel + cov_ut            
+            cov_brossard = (noise_level ** 2) * bonnabel + cov_ut   """          
 
             #sample cov
             samples = [] 
             for i in range(num_samples):
                 
-                T_init = T_rel.transform()
+                """ T_init = T_rel.transform()
                 if odom_noise is not None:
                     std_pos, std_rot = odom_noise
                     xi = np.hstack((np.random.normal(0, std_pos, 3),
                                     np.random.normal(0, std_rot, 3)))
-                    T_init = (SE3Tangent(xi).exp()*T_rel).transform()
+                    T_init = (SE3Tangent(xi).exp()*T_rel).transform() """
 
-                noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, noise_level)
+                noisy_cloud_ref, noisy_cloud_in = cloud_ref, cloud_in#create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, noise_level)
+                T_init = T_rel.transform()
                 icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
-                samples.append(icp_transform)
+                #samples.append(icp_transform)
+                break
             
             #save
-            with open(cov_result_save_path, 'wb') as f:
-                pickle.dump((censi_cov, cov_brossard, samples, T_rel.transform()), f)
+            #with open(cov_result_save_path, 'wb') as f:
+            #    pickle.dump((censi_cov, cov_brossard, samples, T_rel.transform()), f)
 
 def calc_mean_cov(tf_list, T_gt):
     n = len(tf_list)
@@ -333,13 +337,19 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                 sample_mean = (SE3Tangent(sample_mean).exp()*T_bar.inverse()).transform()
                 origin = sample_mean[:2,3]
 
+
                 #transfrom sample points and get 2d
+                sample_points6d = np.zeros((len(samples), 6))
                 sample_points2d = np.zeros((len(samples), 2))
                 T_rel_inv = T_bar.inverse()
                 for n in range(len(samples)):
                     mc = (TtoSE3(samples[n])*T_rel_inv)
-                    sample_points2d[n] = mc.transform()[:2,3]    
-            
+                    sample_points6d[n] = mc.log().coeffs()
+                    sample_points2d[n] = mc.transform()[:2,3] 
+                
+                #g = multivariate_normality(sample_points2d, alpha=.05)
+                #print(g)
+
                 #trace
                 t_censi = np.trace(censi_cov[:2,:2])
                 t_sample = np.trace(sample_cov[:2,:2])
@@ -451,6 +461,59 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
         if save: plt.savefig(results_figures_path / Path("./angleErrorBross.eps", format="eps"))
         else: plt.show()
 
+def test_gaussianity(base_path):
+    data_path = base_path / Path("./results/gauss/*")
+    m = glob.glob(str(data_path))
+    n = [glob.glob(k + "/202*/noise*/*") for k in m]
+    p = sorted([item for sublist in n for item in sublist])
+
+    i = 0
+    fig, axs = plt.subplots(2, 2)
+
+    for file in p:
+        with open(file, 'rb') as f:
+            scan_number = int(file.split('_')[-1].split('.')[0])
+            
+            censi_cov, brossard_cov, samples, T_rel = pickle.load(f)
+            #censi_cov, brossard_cov = censi_cov*1e1, brossard_cov*1e1
+
+            sample_mean, sample_cov = calc_mean_cov(samples, T_rel)
+
+            #transform mean and covariance
+            T_bar = TtoSE3(T_rel)
+            sample_mean = (SE3Tangent(sample_mean).exp()*T_bar.inverse()).transform()
+            origin = sample_mean[:2,3]
+
+            #transfrom sample points and get 2d
+            sample_points6d = np.zeros((len(samples), 6))
+            sample_points2d = np.zeros((len(samples), 2))
+            sample_points3d = np.zeros((len(samples), 3))
+            T_rel_inv = T_bar.inverse()
+            for n in range(len(samples)):
+                mc = (TtoSE3(samples[n])*T_rel_inv)
+                sample_points6d[n] = mc.log().coeffs()
+                sample_points2d[n] = mc.transform()[:2,3] 
+                sample_points3d[n] = mc.transform()[:3,3]
+            #check gaussianity
+            
+
+            if scan_number == 18: 
+                g = multivariate_normality(sample_points2d, alpha=.05)
+                print(file)
+                print(g, "\n")    
+
+                x = i//2
+                y = i%2
+                titles = ["(a)", "(b)", "(c)", "(d)"]
+                axs[x][y].plot(sample_points3d[:,0], sample_points2d[:,1], 'r.', label="Samples.")  
+                if x == 1: axs[x][y].set_xlabel("x [m]")
+                if y == 0: axs[x][y].set_ylabel("y [m]")
+                axs[x][y].set_title(titles[i])
+                i += 1
+
+    plt.show()
+
+
 if __name__ == "__main__":
     np.random.seed(0)
     
@@ -460,7 +523,7 @@ if __name__ == "__main__":
 
     cloud_dir = "20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
-    results_path_sensor_noise = base_path / Path("./results/result_brossard") / cloud_dir
+    results_path_sensor_noise = base_path / Path("./results/test") / cloud_dir
     results_figures_path = base_path / Path("./imgs/comp005/")
     os.makedirs(results_figures_path, exist_ok=True)
     os.makedirs(results_path_sensor_noise, exist_ok=True)
@@ -472,21 +535,23 @@ if __name__ == "__main__":
     transforms = S.get_transforms(use_quat=True)
     transforms_se3 = [SE3(T) for T in transforms]
 
-    numb_mc_samples = 100
-    clouds_mask = None#[17,18,19,20] #list of clouds to use in dataset
+    numb_mc_samples = 1000
+    clouds_mask = [21,22,23,24]#[1,2,18,19]#[17,18,19,20] #list of clouds to use in dataset
     std_sensor_noise_levels = [0.04]#[0.04]#[0.04]#[n/1000 for n in range(51)]#[0.02] # sigma sensor
     odom_noise = (0.08, 0.04) #pos, rot
+
+    print(transforms_se3[15].transform()[:2, 3], "\n",transforms_se3[16].transform()[:2, 3])
 
     #ut
     cov_Q_odo = block_diag(odom_noise[0]**2 * np.eye(3), odom_noise[1]**2 * np.eye(3))
     cov_ut = UTSE3(6, 1, 2, 0, cov_Q_odo)  # parameter of unscented transform
 
-    #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
-    #    numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
-    results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
-        clouds_mask=clouds_mask, plot_cov=True, plot_trace=False, save=False)
+    cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
+        numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
+    #results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
+    #    clouds_mask=clouds_mask, plot_cov=True, plot_trace=False, save=False)
  
-    
+    #test_gaussianity(base_path)
             
 
     
