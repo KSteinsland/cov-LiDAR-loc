@@ -14,6 +14,7 @@ import subprocess
 import pickle
 from scipy.linalg import block_diag
 from ut import *
+import time
 
 matplotlib.rcParams['text.usetex'] = True
 matplotlib.rcParams['axes.titlesize'] = 'x-large'
@@ -43,6 +44,7 @@ def str_T(T):
     output += ']'
     return output
 
+times_without_cov = []
 def icp_without_cov(pc_ref, pc_in, T_init):
     initTranslation = str_T(T_init[:3, 3])
     initRotation = str_T(T_init[:3, :3])
@@ -62,13 +64,17 @@ def icp_without_cov(pc_ref, pc_in, T_init):
     command += " " + "--initRotation" + " " + initRotation
     command += " " + str(pc_ref)
     command += " " + str(pc_in)
+    start = time.time()
     subprocess.run(command, shell=True)
+    timer = time.time() - start
+    times_without_cov.append(timer)
 
     data = np.genfromtxt(pose_path_str)
     T = data[:4]
     init_T = data[4:]
     return T
 
+times_with_cov = []
 def icp_with_cov(pc_ref, pc_in, T_init):
     initTranslation = str_T(T_init[:3, 3])
     initRotation = str_T(T_init[:3, :3])
@@ -90,7 +96,10 @@ def icp_with_cov(pc_ref, pc_in, T_init):
     command += " " + "--initRotation" + " " + initRotation
     command += " " + str(pc_ref)
     command += " " + str(pc_in)
+    start = time.time()
     subprocess.run(command, shell=True)
+    timer = time.time() - start
+    times_with_cov.append(timer)
 
     data = np.genfromtxt(pose_path_str)
     T = data[:4]
@@ -163,7 +172,19 @@ def inv(T):
     T_inv[:3, 3] = -T_inv[:3, :3].dot(T[:3, 3])
     return T_inv
 
+def bmatrix(a):
+    """Returns a LaTeX bmatrix
 
+    :a: numpy array
+    :returns: LaTeX bmatrix as a string
+    """
+    if len(a.shape) > 2:
+        raise ValueError('bmatrix can at most display two dimensions')
+    lines = str(a).replace('[', '').replace(']', '').splitlines()
+    rv = [r'\begin{bmatrix}']
+    rv += ['  ' + ' & '.join(l.split()) + r'\\' for l in lines]
+    rv +=  [r'\end{bmatrix}']
+    return '\n'.join(rv)
 
 def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path, num_samples, std_sensor_noise_levels, ut, odom_noise=None, clouds_mask=None, overwrite=False):
     """
@@ -221,19 +242,25 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
             os.makedirs(working_cloud_path, exist_ok=True)
 
             #simulate noisy odometry
-            T_init = T_rel.transform()
-            if odom_noise is not None:
-                std_pos, std_rot = odom_noise
-                xi = np.hstack((np.random.normal(0, std_pos, 3),
-                                np.random.normal(0, std_rot, 3)))
-                T_init = (SE3Tangent(xi).exp()*T_rel).transform()
+            for i in range(30):
+                T_init = T_rel.transform()
+                if odom_noise is not None:
+                    std_pos, std_rot = odom_noise
+                    xi = np.hstack((np.random.normal(0, std_pos, 3),
+                                    np.random.normal(0, std_rot, 3)))
+                    T_init = (SE3Tangent(xi).exp()*T_rel).transform()
 
-            #censi cov
-            noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, noise_level)
-            icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
-            censi_cov = (noise_level **2) * censi
+                #censi cov
+                noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, noise_level)
+                #timing
+                icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
+                icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
 
-            #Brossard cov
+            """ icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
+            censi_cov = (noise_level **2) * censi """
+
+
+            """ #Brossard cov
             sps = ut.sp.sigma_points(ut.Q_prior)
             # unscented transform
             T_ut = []
@@ -261,7 +288,7 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
             
             #save
             with open(cov_result_save_path, 'wb') as f:
-                pickle.dump((censi_cov, cov_brossard, samples, T_rel.transform()), f)
+                pickle.dump((censi_cov, cov_brossard, samples, T_rel.transform()), f) """
 
 def calc_mean_cov(tf_list, T_gt):
     n = len(tf_list)
@@ -300,18 +327,25 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
         noise_level_result = list(filter(lambda n: int(n.split('_')[-1])/10000 in noise_levels_mask, noise_level_result))
     noise_levels = np.sort(noise_levels)
 
-    traces_sample_cov_avg = []
-    traces_censi_cov_avg = []
-    traces_brossard_cov_avg = []
+    traces_sample_cov_avg_pos = []
+    traces_censi_cov_avg_pos = []
+    traces_brossard_cov_avg_pos = []
+    traces_sample_cov_avg_rot = []
+    traces_censi_cov_avg_rot = []
+    traces_brossard_cov_avg_rot = []
     angle_errors_bross_avg = []
     angle_errors_censi_avg = []
 
     for i, lvl in enumerate(noise_levels):
         results = sorted(glob.glob(str(noise_level_result[i]) + "/*"))
 
-        traces_sample_cov = []
-        traces_censi_cov = []
-        traces_brossard_cov = []
+        
+        traces_sample_cov_pos = []
+        traces_censi_cov_pos = []
+        traces_brossard_cov_pos = []
+        traces_sample_cov_rot = []
+        traces_censi_cov_rot = []
+        traces_brossard_cov_rot = []
         angle_errors_censi = []
         angle_errors_bross = []
 
@@ -341,12 +375,15 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                     sample_points2d[n] = mc.transform()[:2,3]    
             
                 #trace
-                t_censi = np.trace(censi_cov[:2,:2])
-                t_sample = np.trace(sample_cov[:2,:2])
-                t_brossard = np.trace(brossard_cov[:2,:2])
-                traces_censi_cov.append(t_censi)
-                traces_sample_cov.append(t_sample)
-                traces_brossard_cov.append(t_brossard)
+                t_censi_pos, t_censi_rot = np.trace(censi_cov[:3,:3]), np.trace(censi_cov[3:,3:])
+                t_sample_pos, t_sample_rot = np.trace(sample_cov[:3,:3]), np.trace(sample_cov[3:,3:])
+                t_brossard_pos, t_brossard_rot = np.trace(brossard_cov[:3,:3]), np.trace(brossard_cov[3:,3:])
+                traces_censi_cov_pos.append(t_censi_pos)
+                traces_sample_cov_pos.append(t_sample_pos)
+                traces_brossard_cov_pos.append(t_brossard_pos)
+                traces_censi_cov_rot.append(t_censi_rot)
+                traces_sample_cov_rot.append(t_sample_rot)
+                traces_brossard_cov_rot.append(t_brossard_rot)
                 
                 #eigenvalues
                 wc, ec = np.linalg.eig(censi_cov[:2,:2])
@@ -363,10 +400,16 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                 angle_errors_censi.append(d_angle_c)
 
                 d_angle_b = np.arccos(eb[:,max_b].dot(es[:,max_s]))
-                d_angle_b = np.round(d_angle_b * 180 / np.pi, 0)
+                d_angle_b = np.round(d_angle_b * 180 / np.pi, 1)
                 if d_angle_b > 90: d_angle_b = 180 - d_angle_b
                 angle_errors_bross.append(d_angle_b)
                 
+                print(f"""
+                    clouds {scan_number} and {scan_number+1}, Sensor noise: {lvl}.
+                    Trace sample cov pos: {t_sample_pos:.3e}, rot: {t_sample_rot:.3e},
+                    Censi cov: angle error {d_angle_c}, trace pos {t_censi_pos:.3e}, trace rot {t_censi_rot:.3e},
+                    Brossard cov: angle error {d_angle_b}, trace pos {t_brossard_pos:.3e}, trace rot {t_brossard_rot:.3e},
+                    sample mean: {np.linalg.norm(sample_mean[:2,3])}\n""")
                 
                 if plot_cov: 
                     #plot cov 2d 
@@ -389,12 +432,7 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                     
                     plt.legend(loc="best")
                     #plt.title("Covariances")
-                    print(f"""
-                            clouds {scan_number} and {scan_number+1},
-                            Sensor noise: {lvl}. Trace sample cov: {t_sample:.3e},
-                            Censi cov: angle error {d_angle_c}, trace {t_censi:.3e},
-                            Brossard cov: angle error {d_angle_b}, trace {t_brossard:.3e},
-                            sample mean: {np.linalg.norm(sample_mean[:2,3])}\n""")
+                    
                 
                     if save:
                         lvl_s = str(format(lvl, '.4f')).replace('.','') 
@@ -402,26 +440,35 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                         plt.savefig(save_path, format="eps")
                     else: plt.show()
         
-        traces_sample_cov_avg.append(np.average(traces_sample_cov))
-        traces_censi_cov_avg.append(np.average(traces_censi_cov))
-        traces_brossard_cov_avg.append(np.average(traces_brossard_cov)) 
+        """ traces_sample_cov_avg_pos.append(np.average(traces_sample_cov_pos))
+        traces_censi_cov_avg_pos.append(np.average(traces_censi_cov_pos))
+        traces_brossard_cov_avg_pos.append(np.average(traces_brossard_cov_pos)) 
+        traces_sample_cov_avg_rot.append(np.average(traces_sample_cov_rot))
+        traces_censi_cov_avg_rot.append(np.average(traces_censi_cov_rot))
+        traces_brossard_cov_avg_rot.append(np.average(traces_brossard_cov_rot))  """
         angle_errors_censi_avg.append(np.average(angle_errors_censi))
         angle_errors_bross_avg.append(np.average(angle_errors_bross))
 
     
-    trace_MSE_censi = np.square(np.subtract(traces_censi_cov_avg, traces_sample_cov_avg)).mean()
-    trace_MSE_bross = np.square(np.subtract(traces_brossard_cov_avg, traces_sample_cov_avg)).mean()
+    trace_MSE_censi_pos = np.square(np.subtract(np.log(np.array(traces_censi_cov_pos) ), np.log(np.array(traces_sample_cov_pos)))).mean()
+    trace_MSE_bross_pos = np.square(np.subtract(np.log(np.array(traces_brossard_cov_pos)), np.log(np.array(traces_sample_cov_pos)))).mean()
+    trace_MSE_censi_rot = np.square(np.subtract(np.log(np.array(traces_censi_cov_rot)), np.log(np.array(traces_sample_cov_rot)))).mean()
+    trace_MSE_bross_rot = np.square(np.subtract(np.log(np.array(traces_brossard_cov_rot)), np.log(np.array(traces_sample_cov_rot)))).mean()
 
     #plot traces
-    print("trace MSE censi: ", trace_MSE_censi)
-    print("trace MSE bross: ", trace_MSE_bross)
+    print("trace MSE censi pos: ", trace_MSE_censi_pos)
+    print("trace MSE censi rot: ", trace_MSE_censi_rot)
+    print()
+    print("trace MSE bross pos: ", trace_MSE_bross_pos)
+    print("trace MSE bross rot: ", trace_MSE_bross_rot)
+   
     print("average angle error censi: ", np.average(angle_errors_censi_avg))
     print("average angle error bross: ", np.average(angle_errors_bross_avg))
     if plot_trace:
         #censi
         fig, ax = plt.subplots()
-        ax.plot(noise_levels, traces_sample_cov_avg, label="Trace sample cov.")
-        ax.plot(noise_levels, traces_censi_cov_avg, label="Trace censi's cov.")
+        ax.plot(noise_levels, traces_sample_cov_avg_pos, label="Trace sample cov.")
+        ax.plot(noise_levels, traces_censi_cov_avg_pos, label="Trace censi's cov.")
         plt.title("Sampeled variance vs Censi's estimate.")
         plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
         plt.legend(loc="best")
@@ -437,8 +484,8 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
 
         #brossard
         fig, ax = plt.subplots()
-        ax.plot(noise_levels, traces_sample_cov_avg, label="Trace sample cov.")
-        ax.plot(noise_levels, traces_brossard_cov_avg, label="Trace Brossard's cov.")
+        ax.plot(noise_levels, traces_sample_cov_avg_pos, label="Trace sample cov.")
+        ax.plot(noise_levels, traces_brossard_cov_avg_pos, label="Trace Brossard's cov.")
         plt.title("Sampeled variance vs Brossard's estimate.")
         plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
         plt.legend(loc="best")
@@ -461,7 +508,7 @@ if __name__ == "__main__":
 
     cloud_dir = "20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
-    results_path_sensor_noise = base_path / Path("./results/result_brossard") / cloud_dir
+    results_path_sensor_noise = base_path / Path("./results/timing") / cloud_dir
     results_figures_path = base_path / Path("./imgs/comp005/")
     os.makedirs(results_figures_path, exist_ok=True)
     os.makedirs(results_path_sensor_noise, exist_ok=True)
@@ -473,21 +520,27 @@ if __name__ == "__main__":
     transforms = S.get_transforms(use_quat=True)
     transforms_se3 = [SE3(T) for T in transforms]
 
-    numb_mc_samples = 100
+    numb_mc_samples = 30
     clouds_mask = None#[17,18,19,20] #list of clouds to use in dataset
-    std_sensor_noise_levels = [0.04]#[0.04]#[0.04]#[n/1000 for n in range(51)]#[0.02] # sigma sensor
-    odom_noise = (0.08, 0.04) #pos, rot
+    std_sensor_noise_levels = [0.008]#[0.04]#[n/1000 for n in range(51)]#[0.02] # sigma sensor #0.014
+    odom_noise = (1.00, 0.5) #pos, rot
 
     #ut
     cov_Q_odo = block_diag(odom_noise[0]**2 * np.eye(3), odom_noise[1]**2 * np.eye(3))
     cov_ut = UTSE3(6, 1, 2, 0, cov_Q_odo)  # parameter of unscented transform
 
-    #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
-    #    numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
-    results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
-        clouds_mask=clouds_mask, plot_cov=True, plot_trace=False, save=False)
+    cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
+        numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
+    #results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
+    #    clouds_mask=clouds_mask, plot_cov=False, plot_trace=False, save=False)
  
-    
+    #print(times_with_cov)
+    print(len(times_with_cov))
+    print(np.average(np.array(times_with_cov)), "\n")
+
+    #print(times_without_cov)
+    print(len(times_without_cov))
+    print(np.average(np.array(times_without_cov)), "\n")
             
 
     
