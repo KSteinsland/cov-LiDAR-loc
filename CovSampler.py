@@ -182,9 +182,24 @@ def bmatrix(a):
         raise ValueError('bmatrix can at most display two dimensions')
     lines = str(a).replace('[', '').replace(']', '').splitlines()
     rv = [r'\begin{bmatrix}']
-    rv += ['  ' + ' & '.join(l.split()) + r'\\' for l in lines]
+    rv += ['  ' + ' & '.join(latex_float_list(l.split())) + r'\\' for l in lines]
     rv +=  [r'\end{bmatrix}']
     return '\n'.join(rv)
+
+
+def latex_float_list(l):
+    out = []
+    for i in l:
+        out.append(latex_float(float(i)))
+    return out
+
+def latex_float(f):
+    float_str = "{0:.1e}".format(f)
+    if "e" in float_str:
+        base, exponent = float_str.split("e")
+        return r"{0} \times 10^{{{1}}}".format(base, int(exponent))
+    else:
+        return float_str
 
 def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path, num_samples, std_sensor_noise_levels, ut, odom_noise=None, clouds_mask=None, overwrite=False):
     """
@@ -242,25 +257,24 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
             os.makedirs(working_cloud_path, exist_ok=True)
 
             #simulate noisy odometry
-            for i in range(30):
-                T_init = T_rel.transform()
-                if odom_noise is not None:
-                    std_pos, std_rot = odom_noise
-                    xi = np.hstack((np.random.normal(0, std_pos, 3),
-                                    np.random.normal(0, std_rot, 3)))
-                    T_init = (SE3Tangent(xi).exp()*T_rel).transform()
+            T_init = T_rel.transform()
+            if odom_noise is not None:
+                std_pos, std_rot = odom_noise
+                xi = np.hstack((np.random.normal(0, std_pos, 3),
+                                np.random.normal(0, std_rot, 3)))
+                T_init = (SE3Tangent(xi).exp()*T_rel).transform()
 
-                #censi cov
-                noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, noise_level)
-                #timing
+                
+                """ #timing
                 icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
-                icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
+                icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init) """
+            #censi cov
+            noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, noise_level)
+            icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
+            censi_cov = (noise_level **2) * censi 
 
-            """ icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
-            censi_cov = (noise_level **2) * censi """
 
-
-            """ #Brossard cov
+            #Brossard cov
             sps = ut.sp.sigma_points(ut.Q_prior)
             # unscented transform
             T_ut = []
@@ -288,7 +302,7 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
             
             #save
             with open(cov_result_save_path, 'wb') as f:
-                pickle.dump((censi_cov, cov_brossard, samples, T_rel.transform()), f) """
+                pickle.dump((censi_cov, cov_brossard, samples, T_rel.transform()), f)
 
 def calc_mean_cov(tf_list, T_gt):
     n = len(tf_list)
@@ -411,6 +425,12 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                     Brossard cov: angle error {d_angle_b}, trace pos {t_brossard_pos:.3e}, trace rot {t_brossard_rot:.3e},
                     sample mean: {np.linalg.norm(sample_mean[:2,3])}\n""")
                 
+                with np.printoptions(precision=1):
+                    print("sample cov: ", bmatrix(sample_cov))
+                    print("censis cov: ", bmatrix(censi_cov))
+                    print("brossa cov: ", bmatrix(brossard_cov))
+
+                
                 if plot_cov: 
                     #plot cov 2d 
                     fig, ax = plt.subplots()
@@ -508,7 +528,7 @@ if __name__ == "__main__":
 
     cloud_dir = "20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
-    results_path_sensor_noise = base_path / Path("./results/timing") / cloud_dir
+    results_path_sensor_noise = base_path / Path("./results/result_brossard") / cloud_dir
     results_figures_path = base_path / Path("./imgs/comp005/")
     os.makedirs(results_figures_path, exist_ok=True)
     os.makedirs(results_path_sensor_noise, exist_ok=True)
@@ -522,17 +542,17 @@ if __name__ == "__main__":
 
     numb_mc_samples = 30
     clouds_mask = None#[17,18,19,20] #list of clouds to use in dataset
-    std_sensor_noise_levels = [0.008]#[0.04]#[n/1000 for n in range(51)]#[0.02] # sigma sensor #0.014
-    odom_noise = (1.00, 0.5) #pos, rot
+    std_sensor_noise_levels = [0.04]#[n/1000 for n in range(51)]#[0.02] # sigma sensor #0.014
+    odom_noise = (0.08, 0.04) #pos, rot
 
     #ut
     cov_Q_odo = block_diag(odom_noise[0]**2 * np.eye(3), odom_noise[1]**2 * np.eye(3))
     cov_ut = UTSE3(6, 1, 2, 0, cov_Q_odo)  # parameter of unscented transform
 
-    cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
-        numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
-    #results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
-    #    clouds_mask=clouds_mask, plot_cov=False, plot_trace=False, save=False)
+    #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
+    #    numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
+    results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
+        clouds_mask=clouds_mask, plot_cov=False, plot_trace=False, save=False)
  
     #print(times_with_cov)
     print(len(times_with_cov))
