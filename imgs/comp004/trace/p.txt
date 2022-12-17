@@ -1,0 +1,13 @@
+numb_mc_samples = 100
+clouds_mask = [17,18,19,20] #list of clouds to use in dataset
+std_sensor_noise_levels = [n/1000 for n in range(51)]#[0.04]#[0.04]#[n/1000 for n in range(51)]#[0.02] # sigma sensor
+odom_noise = (0.08, 0.04) #pos, rot
+
+#ut
+cov_Q_odo = block_diag(odom_noise[0]**2 * np.eye(3), odom_noise[1]**2 * np.eye(3))
+cov_ut = UTSE3(6, 1, 2, 0, cov_Q_odo)  # parameter of unscented transform
+
+trace MSE censi:  3.00549141751905e-08
+trace MSE bross:  3.0804210041095573e-09
+average angle error censi:  40.76470588235294
+average angle error bross:  16.495098039215687

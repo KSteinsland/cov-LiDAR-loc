@@ -194,10 +194,13 @@ def latex_float_list(l):
     return out
 
 def latex_float(f):
-    float_str = "{0:.1e}".format(f)
+    float_str = "{0:.0e}".format(f)
     if "e" in float_str:
         base, exponent = float_str.split("e")
-        return r"{0} \times 10^{{{1}}}".format(base, int(exponent))
+        if f > 0:
+            return r"\phantom{{-}}{0} \times 10^{{{1}}}".format(base, int(exponent))
+        else:
+            return r"{0} \times 10^{{{1}}}".format(base, int(exponent))
     else:
         return float_str
 
@@ -315,8 +318,8 @@ def calc_mean_cov(tf_list, T_gt):
         T_bar_last = T_bar
         T_bar = T_bar*(SE3Tangent(psi_bar).exp())
 
-        eps = np.linalg.norm((T_bar.inverse()*T_bar_last).log().coeffs())
-        if eps < 1e-16:
+        epsilon = np.linalg.norm((T_bar.inverse()*T_bar_last).log().coeffs())
+        if epsilon < 1e-16:
             break
 
     mean = T_bar.log().coeffs()
@@ -456,8 +459,8 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                 
                     if save:
                         lvl_s = str(format(lvl, '.4f')).replace('.','') 
-                        save_path = results_figures_path / Path(f'./clouds{scan_number}and{scan_number+1}_noise_{lvl_s}.eps') 
-                        plt.savefig(save_path, format="eps")
+                        save_path = results_figures_path / Path(f'./clouds{scan_number}and{scan_number+1}_noise_{lvl_s}.svg') 
+                        plt.savefig(save_path, format="svg")
                     else: plt.show()
         
         """ traces_sample_cov_avg_pos.append(np.average(traces_sample_cov_pos))
@@ -492,14 +495,14 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
         plt.title("Sampeled variance vs Censi's estimate.")
         plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
         plt.legend(loc="best")
-        if save: plt.savefig(results_figures_path / Path("./noiseCovCensi.eps", format="eps"))
+        if save: plt.savefig(results_figures_path / Path("./noiseCovCensi.svg", format="svg"))
         else: plt.show()
 
         fig, ax = plt.subplots()
         ax.plot(noise_levels, angle_errors_censi_avg, label="")
         plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
         plt.title("Angle error degrees.")
-        if save: plt.savefig(results_figures_path / Path("./angleErrorCensi.eps", format="eps"))
+        if save: plt.savefig(results_figures_path / Path("./angleErrorCensi.svg", format="svg"))
         else: plt.show()
 
         #brossard
@@ -509,14 +512,14 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
         plt.title("Sampeled variance vs Brossard's estimate.")
         plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
         plt.legend(loc="best")
-        if save: plt.savefig(results_figures_path / Path("./noiseCovBross.eps", format="eps"))
+        if save: plt.savefig(results_figures_path / Path("./noiseCovBross.svg", format="svg"))
         else: plt.show()
 
         fig, ax = plt.subplots()
         ax.plot(noise_levels, angle_errors_bross_avg, label="")
         plt.xlabel("Sensor noise standard deviation $\sigma_{sens}$ [m].")
         plt.title("Angle error degrees.")
-        if save: plt.savefig(results_figures_path / Path("./angleErrorBross.eps", format="eps"))
+        if save: plt.savefig(results_figures_path / Path("./angleErrorBross.svg", format="svg"))
         else: plt.show()
 
 if __name__ == "__main__":
@@ -529,7 +532,7 @@ if __name__ == "__main__":
     cloud_dir = "20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
     results_path_sensor_noise = base_path / Path("./results/result_brossard") / cloud_dir
-    results_figures_path = base_path / Path("./imgs/comp005/")
+    results_figures_path = base_path / Path("./imgs/compSVG/")
     os.makedirs(results_figures_path, exist_ok=True)
     os.makedirs(results_path_sensor_noise, exist_ok=True)
     
@@ -541,8 +544,8 @@ if __name__ == "__main__":
     transforms_se3 = [SE3(T) for T in transforms]
 
     numb_mc_samples = 30
-    clouds_mask = None#[17,18,19,20] #list of clouds to use in dataset
-    std_sensor_noise_levels = [0.04]#[n/1000 for n in range(51)]#[0.02] # sigma sensor #0.014
+    clouds_mask = [17,18,19,20] #list of clouds to use in dataset
+    std_sensor_noise_levels = [n/1000 for n in range(51)]#[0.04]##[0.02] # sigma sensor #0.014
     odom_noise = (0.08, 0.04) #pos, rot
 
     #ut
@@ -552,7 +555,7 @@ if __name__ == "__main__":
     #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
     #    numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
     results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
-        clouds_mask=clouds_mask, plot_cov=False, plot_trace=False, save=False)
+        clouds_mask=clouds_mask, plot_cov=False, plot_trace=True, save=True)
  
     #print(times_with_cov)
     print(len(times_with_cov))

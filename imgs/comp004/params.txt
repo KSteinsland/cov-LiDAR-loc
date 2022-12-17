@@ -1,0 +1,189 @@
+                            
+ numb_mc_samples = 100
+clouds_mask = None#[17,18,19,20] #list of clouds to use in dataset
+std_sensor_noise_levels = [0.04]#[0.04]#[n/1000 for n in range(51)]#[0.02] # sigma sensor
+odom_noise = (0.08, 0.04) #pos, rot
+
+#ut
+cov_Q_odo = block_diag(odom_noise[0]**2 * np.eye(3), odom_noise[1]**2 * np.eye(3))
+cov_ut = UTSE3(6, 1, 2, 0, cov_Q_odo)  # parameter of unscented transform
+                            
+                            
+                            
+                            clouds 0 and 1,
+                            Sensor noise: 0.04. Trace sample cov: 1.097e-02,
+                            Censi cov: angle error 48.0, trace 4.136e-06,
+                            Brossard cov: angle error 1.0, trace 1.219e-02
+
+
+                            clouds 1 and 2,
+                            Sensor noise: 0.04. Trace sample cov: 6.909e-03,
+                            Censi cov: angle error 6.0, trace 2.224e-06,
+                            Brossard cov: angle error 0.0, trace 4.595e-03
+
+
+                            clouds 2 and 3,
+                            Sensor noise: 0.04. Trace sample cov: 3.828e-03,
+                            Censi cov: angle error 55.0, trace 4.094e-07,
+                            Brossard cov: angle error 4.0, trace 1.825e-03
+
+
+                            clouds 3 and 4,
+                            Sensor noise: 0.04. Trace sample cov: 2.511e-04,
+                            Censi cov: angle error 71.0, trace 3.897e-07,
+                            Brossard cov: angle error 21.0, trace 5.460e-05
+
+
+                            clouds 4 and 5,
+                            Sensor noise: 0.04. Trace sample cov: 1.888e-04,
+                            Censi cov: angle error 64.0, trace 2.824e-07,
+                            Brossard cov: angle error 16.0, trace 5.200e-05
+
+
+                            clouds 5 and 6,
+                            Sensor noise: 0.04. Trace sample cov: 1.704e-04,
+                            Censi cov: angle error 42.0, trace 2.670e-07,
+                            Brossard cov: angle error 15.0, trace 2.706e-06
+
+
+                            clouds 6 and 7,
+                            Sensor noise: 0.04. Trace sample cov: 1.175e-04,
+                            Censi cov: angle error 89.0, trace 3.781e-07,
+                            Brossard cov: angle error 1.0, trace 8.317e-05
+
+
+                            clouds 7 and 8,
+                            Sensor noise: 0.04. Trace sample cov: 1.362e-04,
+                            Censi cov: angle error 81.0, trace 3.093e-07,
+                            Brossard cov: angle error 35.0, trace 1.441e-05
+
+
+                            clouds 8 and 9,
+                            Sensor noise: 0.04. Trace sample cov: 1.334e-04,
+                            Censi cov: angle error 76.0, trace 2.826e-07,
+                            Brossard cov: angle error 33.0, trace 2.105e-05
+
+
+                            clouds 9 and 10,
+                            Sensor noise: 0.04. Trace sample cov: 9.779e-05,
+                            Censi cov: angle error 70.0, trace 4.182e-07,
+                            Brossard cov: angle error 3.0, trace 2.774e-05
+
+
+                            clouds 10 and 11,
+                            Sensor noise: 0.04. Trace sample cov: 9.189e-05,
+                            Censi cov: angle error 82.0, trace 3.526e-07,
+                            Brossard cov: angle error 15.0, trace 4.130e-05
+
+
+                            clouds 11 and 12,
+                            Sensor noise: 0.04. Trace sample cov: 8.626e-05,
+                            Censi cov: angle error 0.0, trace 2.926e-07,
+                            Brossard cov: angle error 29.0, trace 1.701e-06
+
+
+                            clouds 12 and 13,
+                            Sensor noise: 0.04. Trace sample cov: 1.005e-04,
+                            Censi cov: angle error 10.0, trace 3.453e-07,
+                            Brossard cov: angle error 57.0, trace 1.664e-05
+
+
+                            clouds 13 and 14,
+                            Sensor noise: 0.04. Trace sample cov: 9.062e-05,
+                            Censi cov: angle error 57.0, trace 2.644e-07,
+                            Brossard cov: angle error 4.0, trace 2.199e-05
+
+
+                            clouds 14 and 15,
+                            Sensor noise: 0.04. Trace sample cov: 1.116e-03,
+                            Censi cov: angle error 15.0, trace 2.714e-06,
+                            Brossard cov: angle error 7.0, trace 8.910e-04
+
+
+                            clouds 15 and 16,
+                            Sensor noise: 0.04. Trace sample cov: 2.703e-03,
+                            Censi cov: angle error 1.0, trace 4.350e-06,
+                            Brossard cov: angle error 1.0, trace 7.254e-03
+
+
+                            clouds 16 and 17,
+                            Sensor noise: 0.04. Trace sample cov: 1.104e-03,
+                            Censi cov: angle error 3.0, trace 1.350e-06,
+                            Brossard cov: angle error 21.0, trace 6.260e-05
+
+
+                            clouds 17 and 18,
+                            Sensor noise: 0.04. Trace sample cov: 2.486e-04,
+                            Censi cov: angle error 78.0, trace 1.142e-06,
+                            Brossard cov: angle error 27.0, trace 6.412e-05
+
+
+                            clouds 18 and 19,
+                            Sensor noise: 0.04. Trace sample cov: 2.183e-04,
+                            Censi cov: angle error 15.0, trace 4.969e-07,
+                            Brossard cov: angle error 7.0, trace 9.303e-05
+
+
+                            clouds 19 and 20,
+                            Sensor noise: 0.04. Trace sample cov: 2.114e-04,
+                            Censi cov: angle error 71.0, trace 7.940e-07,
+                            Brossard cov: angle error 15.0, trace 9.745e-05
+
+
+                            clouds 20 and 21,
+                            Sensor noise: 0.04. Trace sample cov: 2.244e-04,
+                            Censi cov: angle error 18.0, trace 7.060e-07,
+                            Brossard cov: angle error 7.0, trace 7.927e-05
+
+
+                            clouds 21 and 22,
+                            Sensor noise: 0.04. Trace sample cov: 1.950e-04,
+                            Censi cov: angle error 66.0, trace 1.961e-06,
+                            Brossard cov: angle error 18.0, trace 1.051e-04
+
+
+                            clouds 22 and 23,
+                            Sensor noise: 0.04. Trace sample cov: 1.920e-04,
+                            Censi cov: angle error 14.0, trace 2.688e-06,
+                            Brossard cov: angle error 12.0, trace 2.744e-04
+
+
+                            clouds 23 and 24,
+                            Sensor noise: 0.04. Trace sample cov: 2.182e-04,
+                            Censi cov: angle error 13.0, trace 1.712e-06,
+                            Brossard cov: angle error 12.0, trace 1.602e-04
+
+
+                            clouds 24 and 25,
+                            Sensor noise: 0.04. Trace sample cov: 3.869e-04,
+                            Censi cov: angle error 7.0, trace 2.695e-06,
+                            Brossard cov: angle error 3.0, trace 3.387e-04
+
+
+                            clouds 25 and 26,
+                            Sensor noise: 0.04. Trace sample cov: 2.145e-03,
+                            Censi cov: angle error 3.0, trace 3.180e-06,
+                            Brossard cov: angle error 3.0, trace 2.492e-03
+
+
+                            clouds 26 and 27,
+                            Sensor noise: 0.04. Trace sample cov: 1.217e-03,
+                            Censi cov: angle error 3.0, trace 3.745e-06,
+                            Brossard cov: angle error 0.0, trace 4.678e-03
+
+
+                            clouds 27 and 28,
+                            Sensor noise: 0.04. Trace sample cov: 1.875e-04,
+                            Censi cov: angle error 11.0, trace 4.579e-06,
+                            Brossard cov: angle error 6.0, trace 1.225e-04
+
+
+                            clouds 28 and 29,
+                            Sensor noise: 0.04. Trace sample cov: 1.837e-04,
+                            Censi cov: angle error 4.0, trace 5.740e-06,
+                            Brossard cov: angle error 5.0, trace 1.590e-04
+
+trace MSE censi:  1.348275453483064e-06
+trace MSE bross:  5.201831123896721e-09
+average angle error censi:  37.0
+average angle error bross:  13.03448275862069
