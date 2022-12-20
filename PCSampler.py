@@ -6,6 +6,7 @@ import ros_numpy
 import pickle
 import time
 import os
+import matplotlib.pyplot as plt
 
 class PCSampler:
 
@@ -118,16 +119,40 @@ def plot_pc(xyz_array_list):
         ys = xyz_array[:,1]
         zs = xyz_array[:,2]
         ax.scatter(xs, ys, zs)
-    plt.show()
+    plt.savefig("./imgs_proj/test.png", format="png")
 
+
+def proj_plot(xyz_array_list):
+    fig, ax = plt.subplots()
+    xs, ys = [], []
+    for xyz_array in xyz_array_list:
+        for i in range(len(xyz_array)):
+            d = np.sqrt(xyz_array[i,0]**2 + xyz_array[i,1]**2)
+            if xyz_array[i,2] > -10 and  d < 25:
+                xs.append(xyz_array[i,0])
+                ys.append(xyz_array[i,1])
+        ax.plot(xs, ys, "r.")
+    plt.savefig("./imgs_proj/test.png", format="png")
+
+def plot_proj_ax(ax, xyz_array, color, label=None):
+    xs, ys = [], []
+    for i in range(len(xyz_array)):
+            d = np.sqrt(xyz_array[i,0]**2 + xyz_array[i,1]**2)
+            if xyz_array[i,2] > 0.1 and d < 25:
+                xs.append(xyz_array[i,0])
+                ys.append(xyz_array[i,1])
+    ax.plot(xs, ys, color + ".", label=label)
+    
 
 if __name__ == "__main__":
-    num_samples = 30
-    sample_interval = 6 #sec
-    
+    np.random.seed(0)
+    num_samples = 300
+    sample_interval = 1 #sec
     S = PCSampler()
-    #S.load_samples()
-    #S.save_samples_csv('20221107-185525.p')
+    dataset = "20221217-153418"
+    #S.load_samples(pickle_filename="./clouds/20221217-153418.p")
+    S.load_samples(pickle_filename=f"./clouds/{dataset}.p")
+    #S.save_samples_csv('20221217-153418.p')
 
     #run and save point clouds
     #S.sample(num_samples, sample_interval)
@@ -135,10 +160,53 @@ if __name__ == "__main__":
 
     #show point clouds
     #S.load_samples()
-    #clouds_world = S.get_transformed_clouds()
-    #vis_pc([add_noise_to_cloud(clouds_world[0], 0.1)])
-    #print(samples[0][1][:2,3])
-    #print(len(samples))
+    from CovSampler import *
+
+    clouds_world = S.get_clouds()
+    c0 = 0
+    c1 = 30
+    c0_xyz = clouds_world[c0]
+    c1_xyz = clouds_world[c1]
+    c0_path = f"/home/ksteins/covest/clouds_csv/{dataset}/cloud{c0:03d}.csv"
+    c1_path = f"/home/ksteins/covest/clouds_csv/{dataset}/cloud{c1:03d}.csv"
+    ts = S.get_transforms()
+    T0 = ts[c0]
+    T1 = ts[c1]
+
+    T_rel = (TtoSE3(T0).inverse()*TtoSE3(T1))
+    std_pos, std_rot = 0.5, 0.03
+
+    ts = []
+    txs, tys = [], []
+    for i in range(100):
+        c0_path_n, c1_path_n = create_noisy_clouds(c0_path, c1_path, "/home/ksteins/covest/temp", 0.5)
+        xi = np.hstack((np.random.normal(0, std_pos, 3),
+                        np.random.normal(0, std_rot, 3)))
+        T_init = (SE3Tangent(xi).exp()*T_rel).transform()
+        print("\n", T_init)
+        
+        T_icp = icp_without_cov(c0_path_n, c1_path_n, T_init)
+        ts.append(T_icp)
+        txs.append(T_icp[0,3])
+        tys.append(T_icp[1,3])
+
+    # calc mean and cov on the 2d sampels instead
+    s2d = np.array([t[:2,3] for t in ts])
+    mean = np.mean(s2d.T,axis=1)
+    cov = np.cov(s2d.T)
+
+    fig, ax = plt.subplots()
+    
+
+
+    plot_proj_ax(ax, transform_cloud(c0_xyz, np.eye(4)), "r", label="Cloud 1")
+    plot_proj_ax(ax, transform_cloud(c1_xyz, T_rel.transform()), "b", label="Cloud 2")
+    ax.plot(txs, tys, "g.", label="Samples")
+    plot_ellipse(ax, mean, cov, label="Sample cov. $3\sigma$", fill_color="g")
+
+    plt.legend(loc="best")
+    plt.savefig("./imgs_proj/test.png", format="png")
+    
 
 
 
