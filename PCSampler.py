@@ -195,17 +195,22 @@ if __name__ == "__main__":
     mean = np.mean(s2d.T,axis=1)
     cov = np.cov(s2d.T)
 
+    gt_pos = T_rel.transform()[:2,3]
+
     fig, ax = plt.subplots()
     
 
 
     plot_proj_ax(ax, transform_cloud(c0_xyz, np.eye(4)), "r", label="Cloud 1")
     plot_proj_ax(ax, transform_cloud(c1_xyz, T_rel.transform()), "b", label="Cloud 2")
-    ax.plot(txs, tys, "g.", label="Samples")
+    ax.plot(txs, tys, "g.", label="$\mathbf{T}_{icp}$ samples")
     plot_ellipse(ax, mean, cov, label="Sample cov. $3\sigma$", fill_color="g")
+    ax.plot(gt_pos[0], gt_pos[1], "c.", label="$\mathbf{T}_{true}$")
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
 
     plt.legend(loc="best")
-    plt.savefig("./imgs_proj/test.png", format="png")
+    plt.savefig("./imgs_proj/test.svg", format="svg")
     
 
 
