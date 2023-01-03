@@ -365,6 +365,11 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
         traces_brossard_cov_rot = []
         angle_errors_censi = []
         angle_errors_bross = []
+        NEES_censi_full = []
+        NEES_bross_full = []
+
+        results_csv_file = open(str(results_path) + "/results3.txt", "w")
+        
 
         for r in results:
             #for every registraion at this noise level
@@ -389,7 +394,24 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                 T_rel_inv = T_bar.inverse()
                 for n in range(len(samples)):
                     mc = (TtoSE3(samples[n])*T_rel_inv)
-                    sample_points2d[n] = mc.transform()[:2,3]    
+                    sample_points2d[n] = mc.transform()[:2,3]
+
+                #NEES 
+                nees_censi = []
+                for s in samples:
+                    s_xi = (TtoSE3(s)*T_rel_inv).log().coeffs()
+                    nees = s_xi.T@np.linalg.inv(censi_cov)@s_xi
+                    nees_censi.append(nees)
+                    NEES_censi_full.append(nees)
+
+                nees_bross = []
+                for s in samples:
+                    s_xi = (TtoSE3(s)*T_rel_inv).log().coeffs()
+                    nees = s_xi.T@np.linalg.inv(brossard_cov)@s_xi
+                    nees_bross.append(nees)
+                    NEES_bross_full.append(nees)
+                
+                
             
                 #trace
                 t_censi_pos, t_censi_rot = np.trace(censi_cov[:3,:3]), np.trace(censi_cov[3:,3:])
@@ -412,7 +434,7 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                 max_b, min_b = wb.argmax(), wb.argmin()
 
                 d_angle_c = np.arccos(ec[:,max_c].dot(es[:,max_s]))
-                d_angle_c = np.round(d_angle_c * 180 / np.pi, 0)
+                d_angle_c = np.round(d_angle_c * 180 / np.pi, 1)
                 if d_angle_c > 90: d_angle_c = 180 - d_angle_c
                 angle_errors_censi.append(d_angle_c)
 
@@ -426,12 +448,17 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                     Trace sample cov pos: {t_sample_pos:.3e}, rot: {t_sample_rot:.3e},
                     Censi cov: angle error {d_angle_c}, trace pos {t_censi_pos:.3e}, trace rot {t_censi_rot:.3e},
                     Brossard cov: angle error {d_angle_b}, trace pos {t_brossard_pos:.3e}, trace rot {t_brossard_rot:.3e},
-                    sample mean: {np.linalg.norm(sample_mean[:2,3])}\n""")
+                    sample mean: {np.linalg.norm(sample_mean[:2,3])},
+                    anees censi: {np.average(np.array(nees_censi)):.3e},
+                    anees bross: {np.average(np.array(nees_bross)):.3e},
+                    \n""")
                 
-                with np.printoptions(precision=1):
+                results_csv_file.write(f"{scan_number:03},{t_sample_pos:.3e},{t_sample_rot:.3e},{d_angle_c:.1f},{t_censi_pos:.3e},{t_censi_rot:.3e},{d_angle_b:.1f},{t_brossard_pos:.3e},{t_brossard_rot:.3e},{np.average(np.array(nees_censi)):.3e},{np.average(np.array(nees_bross)):.3e}\n")
+                
+                """ with np.printoptions(precision=1):
                     print("sample cov: ", bmatrix(sample_cov))
                     print("censis cov: ", bmatrix(censi_cov))
-                    print("brossa cov: ", bmatrix(brossard_cov))
+                    print("brossa cov: ", bmatrix(brossard_cov)) """
 
                 
                 if plot_cov: 
@@ -487,6 +514,16 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
    
     print("average angle error censi: ", np.average(angle_errors_censi_avg))
     print("average angle error bross: ", np.average(angle_errors_bross_avg))
+    print(f"anees censi: {np.average(np.array(NEES_censi_full)):.3e}")
+    print(f"anees bross: {np.average(np.array(NEES_bross_full)):.3e}")
+
+    print(f"median anees bross: {np.median(np.array(NEES_bross_full)):.3e}")
+    print(f"median anees censi: {np.median(np.array(NEES_censi_full)):.3e}")
+
+
+
+    results_csv_file.close()
+
     if plot_trace:
         #censi
         fig, ax = plt.subplots()
@@ -529,10 +566,10 @@ if __name__ == "__main__":
     base_path = Path('/home/ksteins/covest/')
     config_path = base_path / Path('./libpointmatcher/martin/config/base_config.yaml')
 
-    cloud_dir = "20221107-185525"
+    cloud_dir = "20221217-153418"#"20221107-185525"
     dataset_clouds_path = base_path / Path("./clouds_csv/") / cloud_dir
-    results_path_sensor_noise = base_path / Path("./results/result_brossard") / cloud_dir
-    results_figures_path = base_path / Path("./imgs/compSVG/")
+    results_path_sensor_noise = base_path / Path("./results/result_300") / cloud_dir
+    results_figures_path = base_path / Path("./imgs/300/")
     os.makedirs(results_figures_path, exist_ok=True)
     os.makedirs(results_path_sensor_noise, exist_ok=True)
     
@@ -543,9 +580,9 @@ if __name__ == "__main__":
     transforms = S.get_transforms(use_quat=True)
     transforms_se3 = [SE3(T) for T in transforms]
 
-    numb_mc_samples = 30
-    clouds_mask = [17,18,19,20] #list of clouds to use in dataset
-    std_sensor_noise_levels = [n/1000 for n in range(51)]#[0.04]##[0.02] # sigma sensor #0.014
+    numb_mc_samples = 100
+    clouds_mask = None#[17,18,19,20] #list of clouds to use in dataset
+    std_sensor_noise_levels = [0.01]#[0.01, 0.04]#[n/1000 for n in range(51)]#[0.04]##[0.02] # sigma sensor #0.014
     odom_noise = (0.08, 0.04) #pos, rot
 
     #ut
@@ -555,7 +592,7 @@ if __name__ == "__main__":
     #cov_registration_sensor_noise(dataset_clouds_path, transforms_se3, results_path_sensor_noise, 
     #    numb_mc_samples, std_sensor_noise_levels, cov_ut, clouds_mask=clouds_mask, odom_noise=odom_noise, overwrite=False)
     results_reg_sens_noise(results_path_sensor_noise, results_figures_path, noise_levels_mask=std_sensor_noise_levels, 
-        clouds_mask=clouds_mask, plot_cov=False, plot_trace=True, save=True)
+        clouds_mask=clouds_mask, plot_cov=False, plot_trace=False, save=False)
  
     #print(times_with_cov)
     print(len(times_with_cov))
