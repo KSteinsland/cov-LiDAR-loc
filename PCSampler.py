@@ -6,6 +6,8 @@ import ros_numpy
 import pickle
 import time
 import os
+import matplotlib.pyplot as plt
+from manifpy import SE3, SO3, SE3Tangent
 
 class PCSampler:
 
@@ -110,7 +112,6 @@ def vis_pc(xyz_array_list):
     
 
 def plot_pc(xyz_array_list):
-    import matplotlib.pyplot as plt
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
     for xyz_array in xyz_array_list:
@@ -120,12 +121,64 @@ def plot_pc(xyz_array_list):
         ax.scatter(xs, ys, zs)
     plt.show()
 
+def plot_proj_ax(ax, xyz_array, color, label=None):
+    xs, ys = [], []
+    for i in range(len(xyz_array)):
+        d = np.sqrt(xyz_array[i,0]**2 + xyz_array[i,1]**2)
+        if xyz_array[i,2] > 0.1 and d < 150 and xyz_array[i,1] < 25 and np.random.random() < 0.1:#0.005:
+            xs.append(xyz_array[i,0])
+            ys.append(xyz_array[i,1])
+    ax.plot(xs, ys, color + "o", markersize="0.1", label=label)
+
+def TtoSE3(T):
+    #fix
+    q = tf.transformations.quaternion_from_matrix(T)
+    t = T[:3, 3]
+    return SE3(np.concatenate((t, q)))
+
 
 if __name__ == "__main__":
     num_samples = 30
     sample_interval = 6 #sec
     
     S = PCSampler()
+    dataset = "20221217-153418"#"20221107-185525"
+    #S.load_samples(pickle_filename="./clouds/20221217-153418.p")
+    S.load_samples(pickle_filename=f"./clouds/{dataset}.p")
+
+    clouds_world = S.get_clouds()
+    ts = S.get_transforms()
+    c0 = 0
+    c1 = 299#29
+    fig, ax = plt.subplots()
+    
+    for c in range(c0,c1):
+        #c0_xyz = clouds_world[c0]
+        #c1_xyz = clouds_world[c1]
+        #T0 = ts[c0]
+        #T1 = ts[c1]
+        #T_rel = (TtoSE3(T0).inverse()*TtoSE3(T1))
+
+        eul = tf.transformations.euler_from_matrix(ts[c][:3,:3])
+        #print(c, " ", eul[2]*180/3.14)
+        ax.plot(ts[c][0,3], ts[c][1,3], "go", markersize=1)
+        if c % 30 == 0: ax.annotate(f"{c}", ts[c][:2,3])
+        plot_proj_ax(ax, transform_cloud(clouds_world[c], ts[c]), "r")
+    #plot_proj_ax(ax, transform_cloud(c1_xyz, T_rel.transform()), "b", label="Cloud 2")
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
+    ax.set_xlim((10,110))#ax.set_xlim((25,75))#
+    ax.set_ylim((-15,20))#ax.set_ylim((-30,5))#
+    #plt.legend(loc="best")
+    #dummy labels
+    ax.plot([-100], [-100], "go", label= "Robot $xy$-pos")
+    ax.plot([-100], [-100], "ro", label= "Point clouds $xy$-projection")
+    lgnd = plt.legend(loc="lower left", prop={'size': 7})
+   
+
+    plt.savefig("./imgsEnv/fullPath300HQ.png", format="png", dpi=300)
+
+
     #S.load_samples()
     #S.save_samples_csv('20221107-185525.p')
 

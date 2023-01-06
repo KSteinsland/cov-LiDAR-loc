@@ -368,7 +368,7 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
         NEES_censi_full = []
         NEES_bross_full = []
 
-        results_csv_file = open(str(results_path) + "/results3.txt", "w")
+        #results_csv_file = open(str(results_path) + "/results4.txt", "w")
         
 
         for r in results:
@@ -453,7 +453,7 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                     anees bross: {np.average(np.array(nees_bross)):.3e},
                     \n""")
                 
-                results_csv_file.write(f"{scan_number:03},{t_sample_pos:.3e},{t_sample_rot:.3e},{d_angle_c:.1f},{t_censi_pos:.3e},{t_censi_rot:.3e},{d_angle_b:.1f},{t_brossard_pos:.3e},{t_brossard_rot:.3e},{np.average(np.array(nees_censi)):.3e},{np.average(np.array(nees_bross)):.3e}\n")
+                #results_csv_file.write(f"{scan_number:03},{t_sample_pos:.3e},{t_sample_rot:.3e},{d_angle_c:.1f},{t_censi_pos:.3e},{t_censi_rot:.3e},{d_angle_b:.1f},{t_brossard_pos:.3e},{t_brossard_rot:.3e},{np.average(np.array(nees_censi)):.3e},{np.average(np.array(nees_bross)):.3e}\n")
                 
                 """ with np.printoptions(precision=1):
                     print("sample cov: ", bmatrix(sample_cov))
@@ -522,7 +522,7 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
 
 
 
-    results_csv_file.close()
+    #results_csv_file.close()
 
     if plot_trace:
         #censi
