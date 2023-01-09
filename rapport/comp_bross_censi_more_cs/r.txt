@@ -1,9 +1,0 @@
-numb_mc_samples = 100
-clouds_mask = [17,18,19,20] #list of clouds to use in dataset
-std_sensor_noise_levels = [n/1000 for n in range(51)]#[0.02] # sigma sensor
-odom_noise = (0.08, 0.04) #pos, rot
-
-trace MSE censi:  2.8875577761936805e-08
-trace MSE bross:  2.850979018809862e-09
-average angle error censi:  31.732026143790847
-average angle error bross:  13.998366013071896
