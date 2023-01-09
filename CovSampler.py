@@ -22,7 +22,6 @@ matplotlib.rcParams["axes.grid"] = True
 
 
 def TtoSE3(T):
-    #fix
     q = tf.transformations.quaternion_from_matrix(T)
     t = T[:3, 3]
     return SE3(np.concatenate((t, q)))
@@ -46,6 +45,7 @@ def str_T(T):
 
 times_without_cov = []
 def icp_without_cov(pc_ref, pc_in, T_init):
+    #Source: https://github.com/CAOR-MINES-ParisTech/libpointmatcher
     initTranslation = str_T(T_init[:3, 3])
     initRotation = str_T(T_init[:3, :3])
 
@@ -76,6 +76,7 @@ def icp_without_cov(pc_ref, pc_in, T_init):
 
 times_with_cov = []
 def icp_with_cov(pc_ref, pc_in, T_init):
+    #Source: https://github.com/CAOR-MINES-ParisTech/libpointmatcher
     initTranslation = str_T(T_init[:3, 3])
     initRotation = str_T(T_init[:3, :3])
 
@@ -268,9 +269,6 @@ def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path,
                 T_init = (SE3Tangent(xi).exp()*T_rel).transform()
 
                 
-                """ #timing
-                icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
-                icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init) """
             #censi cov
             noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, noise_level)
             icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init)
@@ -331,8 +329,6 @@ def calc_mean_cov(tf_list, T_gt):
          for T in tf_list)
 
     return mean, cov
-
-
 
 
 def results_reg_sens_noise(results_path, results_figures_path, save=False, clouds_mask=None, noise_levels_mask=None, plot_cov=False, plot_trace=True):
@@ -564,191 +560,5 @@ if __name__ == "__main__":
     #print(times_without_cov)
     print(len(times_without_cov))
     print(np.average(np.array(times_without_cov)), "\n")
-            
-
-    
-""" mc_new = np.zeros((len(samples), 6))
-                #sample_points2d = np.array([[(SE3Tangent(mc).exp()).transform()[0,3], (SE3Tangent(mc).exp()).transform()[1,3], 0] for mc in mc_new]) #try in exp as well
-
-                T_init_inv = TtoSE3(T_rel).inverse()
-                for n in range(len(samples)):
-                    mc_new[n] = (TtoSE3(samples[n])*T_init_inv).log().coeffs()  # xi = log( T * T_hat^{-1} )
-                sample_cov = np.cov(mc_new.T)
-                sample_mean = np.mean(mc_new.T, axis=1)
-
-                
-
-                np.set_printoptions(formatter={'float': lambda x: "{0:0.5f}".format(x)})
-                print("cov1 \n", sample_cov, "\n")
-                print("cov2 \n", sample_cov2, "\n")
-
-                Tmean1 = (SE3Tangent(sample_mean).exp()).transform()
-                Tmean2 = (SE3Tangent(sample_mean2).exp()*T_bar.inverse()).transform()
-                print("mean1 :", Tmean1)
-                print("mean2 :", Tmean2)
-                #print(T_rel) """
-
-
-"""
-def cov_registration_odom_noise(cloud_dataset_path, T_gt, result_dataset_path, num_samples, odom_noise_levels, clouds_mask=None, std_sensor_noise = 0.008, overwrite=False):
-
-    #make dirs
-    os.makedirs(result_dataset_path, exist_ok=True)
-
-    for std_pos, std_rot in odom_noise_levels:
-        str_pos = str(format(std_pos, '.4f')).replace('.','') 
-        str_rot = str(format(std_rot, '.4f')).replace('.','') 
-        noise_lvl_result_path = result_dataset_path / Path(f'./std_pos_{str_pos}_std_rot_{str_rot}')
-        os.makedirs(noise_lvl_result_path, exist_ok=True)
-
-        clouds_path_list = sorted(glob.glob(str(cloud_dataset_path) + "/*"))
-
-        for cld_indx in range(len(clouds_path_list)-1):
-            if clouds_mask != None and cld_indx not in clouds_mask: continue
-            
-            cov_result_save_path = noise_lvl_result_path / Path(f'cloud_pair_{cld_indx:03d}.p')
-            if os.path.exists(cov_result_save_path) and not overwrite:
-                print(cov_result_save_path, " already exist")
-                continue
-
-            cloud_ref, cloud_in = clouds_path_list[cld_indx], clouds_path_list[cld_indx+1]
-            T_gt_ref, T_gt_in = T_gt[cld_indx], T_gt[cld_indx+1]
-            T_rel = T_gt_ref.inverse()*T_gt_in  # ground truth relative transform 
-
-            #sample cov
-            samples = [] 
-            for i in range(num_samples):
-
-                # a place to temorarily store cloud with added noise
-                working_cloud_path = result_dataset_path / Path('working_noisy_cloud')
-                os.makedirs(working_cloud_path, exist_ok=True)
-                noisy_cloud_ref, noisy_cloud_in = create_noisy_clouds(cloud_ref, cloud_in, working_cloud_path, std_sensor_noise)
-                
-                # do a pertubation to T_rel
-                xi = np.hstack((np.random.normal(0, std_pos, 3),
-                                np.random.normal(0, std_rot, 3)))
-
-                T_init = SE3Tangent(xi).exp()*T_rel
-                
-                icp_transform = icp_without_cov(noisy_cloud_ref, noisy_cloud_in, T_init.transform())
-                samples.append(icp_transform)
-            
-            #censi cov
-            icp_transform, censi, bonnabel = icp_with_cov(noisy_cloud_ref, noisy_cloud_in, T_init.transform())
-            censi_cov = std_sensor_noise **2 * censi
-
-            #save
-            with open(cov_result_save_path, 'wb') as f:
-                pickle.dump((censi_cov, samples, T_rel.transform()), f) 
-
-"""
-
-
-
-
-
-
-"""
-def results_reg_odom_noise(results_path, results_figures_path, clouds_mask=None, save=False):
-    noise_level_result = sorted(glob.glob(str(results_path) + "/std_*"))
-    noise_levels = [ ]
-    for n in noise_level_result: 
-        std_pos = int(n.split('_')[-4])/10000 #this is too hacky, fix later
-        std_rot = int(n.split('_')[-1])/10000
-        noise_levels.append((std_pos, std_rot))
-    
-    
-    traces_sample_cov_avg = []
-    traces_censi_cov_avg = []
-    angle_errors_avg = []
-
-    for i, (std_pos, std_rot) in enumerate(noise_levels):
-        #if lvl not in [0.0, 0.001, 0.005, 0.01, 0.05, 0.1]: continue
-        results = sorted(glob.glob(str(noise_level_result[i]) + "/*"))
-
-        traces_sample_cov = []
-        traces_censi_cov = []
-        angle_errors = []
-
-        for r in results:
-            #for every registraion at this noise level
-            scan_number = int(r.split('_')[-1].split('.')[0])
-            # only do clouds in mask
-            if clouds_mask != None and scan_number not in clouds_mask: continue
-            #if scan_number not in scans_to_use: continue
-            with open(r, 'rb') as f:
-                censi_cov, samples, T_rel = pickle.load(f)
-                sample_mean, sample_cov = calc_mean_cov(samples, T_rel)
-                T_bar = SE3Tangent(sample_mean).exp()
-                
-                #sample_points2d = transform_cloud(sample_points2d, SE3Tangent(sample_mean).exp().inverse().transform())
-                samples_rel_Tbar = [ (T_bar.inverse()*TtoSE3(T)).transform() for T in samples]
-                sample_points2d = np.array([[s[0,3], s[1,3], 0] for s in samples_rel_Tbar])
-
-     
-
-                #trace
-                traces_censi_cov.append(np.trace(censi_cov[:2,:2]))
-                traces_sample_cov.append(np.trace(sample_cov[:2,:2]))
-
-                #eigenvalues
-                wc, ec = np.linalg.eig(censi_cov[:2,:2])
-                ws, es = np.linalg.eig(sample_cov[:2,:2])
-
-                max_c, min_c = wc.argmax(), wc.argmin()
-                max_s, min_s = ws.argmax(), ws.argmin()
-
-                d_angle_c = np.arccos(ec[:,max_c].dot(es[:,max_s]))
-                d_angle_c = np.round(d_angle_c * 180 / np.pi, 0)
-                if d_angle_c > 90: d_angle_c = 180 - d_angle_c
-                angle_errors.append(d_angle_c)
-                
-                plot_covariance(censi_cov, sample_cov, sample_points2d, scan_number, results_figures_path, save=save, std_pos=std_pos, std_rot=std_rot)
-
-        traces_sample_cov_avg.append(np.average(traces_sample_cov))
-        traces_censi_cov_avg.append(np.average(traces_censi_cov))
-        angle_errors_avg.append(np.average(angle_errors))
-
-"""
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-""" cov_samples.append((T1.transform(), sampeled_cov, censi_cov))
-            cov_traces_censi.append(np.trace(censi_cov))
-            cov_traces_sample.append(np.trace(sampeled_cov)) """
-
-""" #plot 
-    sample_points2d = np.array([[samples[i][0,3], samples[i][1,3], 0] for i in range(num_samples)])
-    sample_points2d = transform_cloud(sample_points2d, T.inverse().transform())
-
-    fig, ax = plt.subplots() """
-
-
-""" #get the two clouds and their tranformations to world
-        c0, c1 = clouds[i], clouds[i+1]
-        T0, T1 = SE3(transforms[i]), SE3(transforms[i+1])
-        c0_w = transform_cloud(c0, T0.transform())
-        c1_w = transform_cloud(c1, T1.transform())
-
-        #get ground truth relative transformation
-        T = T0.inverse()*T1
-        #c1_0 = transform_cloud(c1, T.transform()) """
+        
 
