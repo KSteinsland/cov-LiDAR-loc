@@ -27,6 +27,7 @@ def TtoSE3(T):
     return SE3(np.concatenate((t, q)))
 
 def str_T(T):
+    #Source: https://github.com/CAOR-MINES-ParisTech/libpointmatcher
     if T.ndim == 1:
         output = '[' + str(T[0])
         for i in range(1, T.shape[0]):
@@ -43,7 +44,7 @@ def str_T(T):
     output += ']'
     return output
 
-times_without_cov = []
+times_without_cov = [] # for timing
 def icp_without_cov(pc_ref, pc_in, T_init):
     #Source: https://github.com/CAOR-MINES-ParisTech/libpointmatcher
     initTranslation = str_T(T_init[:3, 3])
@@ -74,7 +75,7 @@ def icp_without_cov(pc_ref, pc_in, T_init):
     init_T = data[4:]
     return T
 
-times_with_cov = []
+times_with_cov = [] #for timing
 def icp_with_cov(pc_ref, pc_in, T_init):
     #Source: https://github.com/CAOR-MINES-ParisTech/libpointmatcher
     initTranslation = str_T(T_init[:3, 3])
@@ -116,6 +117,7 @@ def get_cloud(path):
     return np.genfromtxt(path, delimiter=',')
 
 def plot_ellipse(ax, mean, cov, n=50, chi2_val=9.21, fill_alpha=0., fill_color='lightsteelblue', label=None):
+    #source: https://github.com/tussedrotten/simple-factorgraph-example
     u, s, v = np.linalg.svd(cov)
     scale = np.sqrt(chi2_val * s)
 
@@ -173,37 +175,6 @@ def inv(T):
     T_inv[:3, 3] = -T_inv[:3, :3].dot(T[:3, 3])
     return T_inv
 
-def bmatrix(a):
-    """Returns a LaTeX bmatrix
-
-    :a: numpy array
-    :returns: LaTeX bmatrix as a string
-    """
-    if len(a.shape) > 2:
-        raise ValueError('bmatrix can at most display two dimensions')
-    lines = str(a).replace('[', '').replace(']', '').splitlines()
-    rv = [r'\begin{bmatrix}']
-    rv += ['  ' + ' & '.join(latex_float_list(l.split())) + r'\\' for l in lines]
-    rv +=  [r'\end{bmatrix}']
-    return '\n'.join(rv)
-
-
-def latex_float_list(l):
-    out = []
-    for i in l:
-        out.append(latex_float(float(i)))
-    return out
-
-def latex_float(f):
-    float_str = "{0:.0e}".format(f)
-    if "e" in float_str:
-        base, exponent = float_str.split("e")
-        if f > 0:
-            return r"\phantom{{-}}{0} \times 10^{{{1}}}".format(base, int(exponent))
-        else:
-            return r"{0} \times 10^{{{1}}}".format(base, int(exponent))
-    else:
-        return float_str
 
 def cov_registration_sensor_noise(cloud_dataset_path, T_gt, result_dataset_path, num_samples, std_sensor_noise_levels, ut, odom_noise=None, clouds_mask=None, overwrite=False):
     """
@@ -425,9 +396,9 @@ def results_reg_sens_noise(results_path, results_figures_path, save=False, cloud
                     sample mean: {np.linalg.norm(sample_mean[:2,3])}\n""")
                 
                 with np.printoptions(precision=1):
-                    print("sample cov: ", bmatrix(sample_cov))
-                    print("censis cov: ", bmatrix(censi_cov))
-                    print("brossa cov: ", bmatrix(brossard_cov))
+                    print("sample cov: ", (sample_cov))
+                    print("censis cov: ", (censi_cov))
+                    print("brossa cov: ", (brossard_cov))
 
                 
                 if plot_cov: 
